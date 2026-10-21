@@ -1,0 +1,90 @@
+{
+  "name": "easy-ssh",
+  "version": "1.0.0",
+  "description": "Save SSH connections and open them in one click.",
+  "homepage": "https://github.com/easy-ssh/easy-ssh",
+  "author": "easy-ssh",
+  "desktopName": "easy-ssh.desktop",
+  "license": "MIT",
+  "type": "module",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "start": "electron-vite preview",
+    "build": "electron-vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win nsis",
+    "dist:mac": "npm run build && electron-builder --mac dmg zip",
+    "dist:linux": "npm run build && electron-builder --linux AppImage deb"
+  },
+  "dependencies": {
+    "ssh2": "^1.17.0"
+  },
+  "devDependencies": {
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/ibm-plex-sans": "^5.3.0",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/ssh2": "^1.15.6",
+    "@vitejs/plugin-react": "^6.1.2",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-web-links": "^0.12.0",
+    "@xterm/xterm": "^6.0.0",
+    "electron": "^45.0.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^6.0.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5"
+  },
+  "build": {
+    "appId": "app.easy-ssh.desktop",
+    "productName": "easy-ssh",
+    "executableName": "easy-ssh",
+    "copyright": "Copyright © 2026 easy-ssh",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**/*",
+      "package.json",
+      "build/icon.png"
+    ],
+    "asar": true,
+    "npmRebuild": false,
+    "toolsets": {
+      "wine": null
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "category": "Network",
+      "synopsis": "One-click SSH connections",
+      "maintainer": "easy-ssh <easy-ssh@localhost>"
+    },
+    "win": {
+      "target": ["nsis"]
+    },
+    "mac": {
+      "target": ["dmg", "zip"],
+      "category": "public.app-category.developer-tools",
+      "identity": null
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "easy-ssh"
+    },
+    "deb": {
+      "depends": ["libsecret-1-0"]
+    },
+    "publish": null
+  }
+}

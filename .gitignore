@@ -1,0 +1,10 @@
+node_modules
+out
+out-tsc
+release
+dist
+*.log
+.DS_Store
+.vite
+*.tsbuildinfo
+.easy-ssh-userdata
