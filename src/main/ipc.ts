@@ -1,6 +1,6 @@
 import { app, clipboard, dialog, ipcMain, shell, type BrowserWindow } from 'electron'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { homedir, userInfo } from 'node:os'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 import type { ConnectionInput } from '../shared/types'
 import { openSystemTerminal } from './system-terminal'
@@ -14,6 +14,7 @@ import { ID_RE, isExecutableName, isSafeExternalUrl } from './security'
 import { STATS_COMMAND } from '../shared/stats'
 import { ForwardManager } from './forward-manager'
 import { authorizedKeysCommand } from '../shared/keys'
+import { parseSshConfig } from '../shared/ssh-config'
 import type { Client } from 'ssh2'
 import type { IpcMainEvent, IpcMainInvokeEvent } from 'electron'
 
@@ -274,6 +275,25 @@ export function registerIpc(
       throw new Error('That file is not valid JSON.')
     }
     const outcome = await store.importBundle(parsed)
+    return { canceled: false, ...outcome }
+  })
+
+  handle('connections:setMeta', (_e, id: unknown, meta: unknown) => store.setMeta(asId(id), meta))
+
+  handle('connections:importSshConfig', async () => {
+    const home = homedir()
+    let path = join(home, '.ssh', 'config')
+    if (!existsSync(path)) {
+      const win = getWindow()
+      if (!win) return { canceled: true, imported: 0, skipped: 0 }
+      const pick = await dialog.showOpenDialog(win, { title: 'Choose an ssh config file', defaultPath: join(home, '.ssh'), properties: ['openFile', 'dontAddToRecent'] })
+      if (pick.canceled || !pick.filePaths[0]) return { canceled: true, imported: 0, skipped: 0 }
+      path = pick.filePaths[0]
+    }
+    if (statSync(path).size > 512 * 1024) throw new Error('That ssh config is too large to import.')
+    const fallbackUser = userInfo().username
+    const entries = parseSshConfig(readFileSync(path, 'utf8'), home).map((e) => ({ ...e, username: e.username || fallbackUser }))
+    const outcome = await store.importBundle({ kind: 'easy-ssh-connections', version: 1, connections: entries })
     return { canceled: false, ...outcome }
   })
 

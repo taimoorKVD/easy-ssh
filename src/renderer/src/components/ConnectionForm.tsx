@@ -26,6 +26,7 @@ export function ConnectionForm({ initial, groups, connections, saving, error, on
   const [defaultDirectory, setDefaultDirectory] = useState(initial?.defaultDirectory ?? '')
   const [startupCommands, setStartupCommands] = useState(initial?.startupCommands.join('\n') ?? '')
   const [group, setGroup] = useState(initial?.group ?? '')
+  const [tags, setTags] = useState((initial?.tags ?? []).join(', '))
   const [jumpHostId, setJumpHostId] = useState(initial?.jumpHostId ?? '')
   const jumpChoices = connections.filter((c) => c.id !== initial?.id && !c.jumpHostId)
   const isBastion = Boolean(initial && connections.some((c) => c.jumpHostId === initial.id))
@@ -63,6 +64,7 @@ export function ConnectionForm({ initial, groups, connections, saving, error, on
       defaultDirectory,
       startupCommands,
       group,
+      tags: tags.split(/[\s,]+/).filter(Boolean),
       jumpHostId: jumpHostId || undefined,
       keyId: authType === 'privateKey' && keyId ? keyId : undefined,
 
@@ -120,6 +122,11 @@ export function ConnectionForm({ initial, groups, connections, saving, error, on
                 <option key={item} value={item} />
               ))}
             </datalist>
+          </label>
+          <label className="field span-2">
+            <span>Tags</span>
+            <input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="web, eu, staging" spellCheck={false} />
+            <small>Search with #tag in the sidebar.</small>
           </label>
           <label className="field span-2">
             <span>Jump host (bastion)</span>

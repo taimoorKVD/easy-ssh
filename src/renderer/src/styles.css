@@ -930,3 +930,12 @@ html, body, #root { width: 100vw; height: 100vh; overflow: hidden; }
 .key-main code { margin-left: auto; font-family: var(--mono); font-size: 11.5px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .key-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .key-actions .btn { padding: 5px 10px; font-size: 12px; }
+
+/* Favorites and tags */
+.conn-star { border: 0; background: transparent; color: var(--text-faint); width: 22px; height: 26px; margin-top: 6px; font-size: 14px; opacity: 0; flex: none; border-radius: 6px; }
+.group li:hover .conn-star, .conn-star:focus-visible, .conn-star.on { opacity: 1; }
+.conn-star.on { color: var(--warn); }
+.conn-star:hover { color: var(--warn); background: rgba(255, 255, 255, 0.06); }
+.conn-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.conn-chip { font-size: 10.5px; color: var(--text-dim); background: rgba(255, 255, 255, 0.05); border-radius: 999px; padding: 0 6px; cursor: pointer; }
+.conn-chip:hover { color: var(--accent); background: var(--accent-dim); }

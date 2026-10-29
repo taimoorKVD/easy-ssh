@@ -19,6 +19,8 @@ export interface ConnectionInput {
   forwards?: unknown
   jumpHostId?: string
   keyId?: string
+  tags?: string[]
+  favorite?: boolean
 }
 
 export interface ConnectionPublic {
@@ -37,6 +39,8 @@ export interface ConnectionPublic {
   forwards: ForwardRule[]
   jumpHostId?: string
   keyId?: string
+  tags: string[]
+  favorite: boolean
   createdAt: string
   updatedAt: string
 }

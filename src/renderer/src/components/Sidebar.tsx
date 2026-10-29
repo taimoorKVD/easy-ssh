@@ -22,30 +22,39 @@ interface SidebarProps {
   onSystemTerminal: (connection: ConnectionPublic) => void
   onCreate: () => void
   onImport: () => void
+  onImportSshConfig: () => void
+  onToggleFavorite: (connection: ConnectionPublic) => void
   onExport: () => void
   collapsed: boolean
   onToggleCollapsed: () => void
 }
 
+export const FAVORITES = '\u0000favorites'
+
 export function groupConnections(connections: ConnectionPublic[], query: string): ConnectionGroup[] {
-  const needle = query.trim().toLowerCase()
-  const filtered = needle
-    ? connections.filter((connection) =>
-        [connection.name, connection.host, connection.username, connection.group, connection.defaultDirectory, `${connection.username}@${connection.host}`]
-          .join(' ')
-          .toLowerCase()
-          .includes(needle)
-      )
-    : connections
+  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  const tagWords = words.filter((w) => w.startsWith('#') && w.length > 1).map((w) => w.slice(1))
+  const needle = words.filter((w) => !w.startsWith('#')).join(' ')
+  const filtered = connections.filter((connection) => {
+    const tags = connection.tags ?? []
+    if (!tagWords.every((t) => tags.includes(t))) return false
+    if (!needle) return true
+    return [connection.name, connection.host, connection.username, connection.group, connection.defaultDirectory, `${connection.username}@${connection.host}`, ...tags]
+      .join(' ')
+      .toLowerCase()
+      .includes(needle)
+  })
   const groups = new Map<string, ConnectionPublic[]>()
   for (const connection of filtered) {
-    const key = connection.group.trim()
+    const key = connection.favorite ? FAVORITES : connection.group.trim()
     const list = groups.get(key) ?? []
     list.push(connection)
     groups.set(key, list)
   }
   return [...groups.keys()]
     .sort((a, b) => {
+      if (a === FAVORITES) return -1
+      if (b === FAVORITES) return 1
       if (!a) return 1
       if (!b) return -1
       return a.localeCompare(b)
@@ -78,6 +87,8 @@ export function Sidebar({
   onSystemTerminal,
   onCreate,
   onImport,
+  onImportSshConfig,
+  onToggleFavorite,
   onExport,
   collapsed,
   onToggleCollapsed
@@ -143,7 +154,7 @@ export function Sidebar({
             id="connection-search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search servers"
+            placeholder="Search servers or #tag"
             spellCheck={false}
             aria-label="Search connections"
           />
@@ -176,7 +187,7 @@ export function Sidebar({
                 onClick={() => toggleGroup(group.group)}
               >
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
-                {group.group || 'Ungrouped'}
+                {group.group === FAVORITES ? '★ Favorites' : group.group || 'Ungrouped'}
                 <span className="group-count">{group.items.length}</span>
               </button>
             </h2>
@@ -197,7 +208,34 @@ export function Sidebar({
                           {connection.username}@{connection.host}:{connection.port}
                         </span>
                         {connection.defaultDirectory && <span className="conn-dir">{connection.defaultDirectory}</span>}
+                        {connection.tags?.length > 0 && (
+                          <span className="conn-tags">
+                            {connection.tags.map((t) => (
+                              <span
+                                key={t}
+                                className="conn-chip"
+                                role="link"
+                                title={`Filter by #${t}`}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setQuery(`#${t}`)
+                                }}
+                              >
+                                #{t}
+                              </span>
+                            ))}
+                          </span>
+                        )}
                       </span>
+                    </button>
+                    <button
+                      className={`conn-star${connection.favorite ? ' on' : ''}`}
+                      title={connection.favorite ? 'Remove from favorites' : 'Add to favorites'}
+                      aria-label={connection.favorite ? `Unfavorite ${connection.name}` : `Favorite ${connection.name}`}
+                      aria-pressed={connection.favorite}
+                      onClick={() => onToggleFavorite(connection)}
+                    >
+                      {connection.favorite ? '★' : '☆'}
                     </button>
                     <div className="conn-actions">
                       <button title="Open in system terminal" aria-label={`Open ${connection.name} in system terminal`} onClick={() => onSystemTerminal(connection)}>
@@ -221,6 +259,9 @@ export function Sidebar({
         <span className="foot-actions">
           <button className="text-button" onClick={onImport}>
             Import
+          </button>
+          <button className="text-button" onClick={onImportSshConfig} title="Import hosts from ~/.ssh/config">
+            ssh config
           </button>
           <button className="text-button" onClick={onExport} disabled={connections.length === 0}>
             Export

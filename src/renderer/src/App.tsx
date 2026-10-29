@@ -362,9 +362,18 @@ export default function App() {
     }
   }
 
-  async function importConnections(): Promise<void> {
+  async function toggleFavorite(connection: ConnectionPublic): Promise<void> {
     try {
-      const result = await window.easySsh.importConnections()
+      await window.easySsh.setMeta(connection.id, { favorite: !connection.favorite })
+      await refresh()
+    } catch (error) {
+      notify(errorMessage(error))
+    }
+  }
+
+  async function importConnections(fromSshConfig = false): Promise<void> {
+    try {
+      const result = fromSshConfig ? await window.easySsh.importSshConfig() : await window.easySsh.importConnections()
       if (result.canceled) return
       await refresh()
       notify(
@@ -629,6 +638,8 @@ export default function App() {
             setForm({})
           }}
           onImport={() => void importConnections()}
+          onImportSshConfig={() => void importConnections(true)}
+          onToggleFavorite={(connection) => void toggleFavorite(connection)}
           onExport={() => void exportConnections()}
         />
         <section className="workspace">
@@ -885,6 +896,7 @@ export default function App() {
                   ]
                 : []),
               { id: 'keys', label: 'SSH keys…', run: () => setKeysOpen(true) },
+              { id: 'import-ssh-config', label: 'Import from ~/.ssh/config', run: () => void importConnections(true) },
               { id: 'sidebar', label: sidebarCollapsed ? 'Expand server sidebar' : 'Collapse server sidebar', hint: 'Ctrl+B', run: toggleSidebar },
               { id: 'theme', label: 'Change theme…', hint: 'Appearance', run: () => setThemeOpen(true) },
               { id: 'toggle-stats', label: statsEnabled ? 'Hide server stats' : 'Show server stats (CPU, RAM, disk, uptime)', run: toggleStats },

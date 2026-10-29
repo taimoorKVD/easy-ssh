@@ -27,6 +27,8 @@ export interface EasySshApi {
   publicKey(id: string): Promise<string>
   installKey(sessionId: string, keyId: string): Promise<'added' | 'present'>
   setForwards(connectionId: string, rules: ForwardRule[]): Promise<ConnectionPublic>
+  setMeta(connectionId: string, meta: { favorite?: boolean; tags?: string[] }): Promise<ConnectionPublic>
+  importSshConfig(): Promise<ImportResult>
   listForwards(sessionId: string): Promise<string[]>
   startForward(sessionId: string, ruleId: string): Promise<void>
   stopForward(sessionId: string, ruleId: string): Promise<void>

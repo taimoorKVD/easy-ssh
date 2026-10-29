@@ -23,6 +23,8 @@ interface StoredConnection {
   forwards?: ForwardRule[]
   jumpHostId?: string
   keyId?: string
+  tags?: string[]
+  favorite?: boolean
   createdAt: string
   updatedAt: string
 }
@@ -193,6 +195,8 @@ export class Store {
         group: normalized.group,
         jumpHostId: this.checkJump(id, input.jumpHostId),
         keyId,
+        tags: input.tags === undefined ? existing?.tags ?? [] : normalizeTags(input.tags),
+        favorite: input.favorite === undefined ? existing?.favorite ?? false : input.favorite === true,
         forwards: input.forwards === undefined ? existing?.forwards ?? [] : validateForwards(input.forwards),
         createdAt: existing?.createdAt ?? now,
         updatedAt: now
@@ -254,6 +258,18 @@ export class Store {
     })
   }
 
+  async setMeta(id: string, meta: unknown): Promise<ConnectionPublic> {
+    return this.enqueue(async () => {
+      const existing = this.connections.find((connection) => connection.id === id)
+      if (!existing) throw new Error('That connection no longer exists.')
+      if (!isRecord(meta)) throw new Error('Invalid update.')
+      if ('favorite' in meta) existing.favorite = meta.favorite === true
+      if ('tags' in meta) existing.tags = normalizeTags(meta.tags)
+      this.flushConnections()
+      return this.toPublic(existing)
+    })
+  }
+
   async remove(id: string): Promise<void> {
     return this.enqueue(async () => {
       this.connections = this.connections.filter((connection) => connection.id !== id)
@@ -279,7 +295,9 @@ export class Store {
         privateKeyPath: connection.privateKeyPath || undefined,
         defaultDirectory: connection.defaultDirectory || undefined,
         startupCommands: connection.startupCommands.length ? connection.startupCommands : undefined,
-        group: connection.group || undefined
+        group: connection.group || undefined,
+        tags: connection.tags?.length ? connection.tags : undefined,
+        favorite: connection.favorite || undefined
       }))
     }
   }
@@ -315,7 +333,18 @@ export class Store {
         })
         imported += 1
       }
-      if (imported > 0) this.flushConnections()
+      let linked = false
+      // Resolve ProxyJump aliases (from ~/.ssh/config) to direct-connecting saved hosts.
+      for (const entry of entries) {
+        if (!isRecord(entry) || typeof entry.proxyJump !== 'string' || typeof entry.name !== 'string') continue
+        const target = this.connections.find((c) => c.name === entry.name && !c.jumpHostId)
+        const hop = this.connections.find((c) => c.name === entry.proxyJump && !c.jumpHostId)
+        if (!target || !hop || hop.id === target.id) continue
+        if (this.connections.some((c) => c.jumpHostId === target.id)) continue
+        target.jumpHostId = hop.id
+        linked = true
+      }
+      if (imported > 0 || linked) this.flushConnections()
       return { imported, skipped }
     })
   }
@@ -339,6 +368,8 @@ export class Store {
     return {
       ...connection,
       forwards: connection.forwards ?? [],
+      tags: connection.tags ?? [],
+      favorite: connection.favorite === true,
       hasPassword: Boolean(item?.password),
       hasPassphrase: Boolean(item?.passphrase)
     }
@@ -519,9 +550,23 @@ function tryNormalizeImport(entry: unknown): Omit<StoredConnection, 'id' | 'crea
       privateKeyPath: normalized.privateKeyPath,
       defaultDirectory: normalized.defaultDirectory,
       startupCommands: normalized.startupCommands,
-      group: normalized.group
+      group: normalized.group,
+      tags: normalizeTags(entry.tags),
+      favorite: entry.favorite === true
     }
   } catch {
     return null
   }
+}
+
+export function normalizeTags(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  const out: string[] = []
+  for (const t of raw) {
+    if (typeof t !== 'string') continue
+    const tag = t.trim().toLowerCase().replace(/^#/, '')
+    if (/^[a-z0-9_.-]{1,24}$/.test(tag) && !out.includes(tag)) out.push(tag)
+    if (out.length >= 10) break
+  }
+  return out
 }
