@@ -1,3 +1,4 @@
+import { nextListIndex } from '@shared/list-nav'
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import type { ConnectionPublic } from '@shared/types'
 import { fillPlaceholders, fuzzyScore, parsePlaceholders, toTerminalInput, type Snippet } from '@shared/snippets'
@@ -100,7 +101,36 @@ export default function CommandPalette(props: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [snippets, connections, actions, query, activeConnectionId])
 
-  useEffect(() => setIndex(0), [query])
+  const listRef = useRef<HTMLDivElement>(null)
+  const navByKeyboard = useRef(true)
+  useEffect(() => {
+    navByKeyboard.current = true
+    setIndex(0)
+  }, [query])
+
+  const pageSize = (): number => {
+    const list = listRef.current
+    const row = list?.querySelector<HTMLElement>('.palette-item')
+    return list && row ? Math.max(1, Math.floor(list.clientHeight / row.offsetHeight) - 1) : 8
+  }
+  // Keep the active row (and its group header when it opens a group) in view, but only for keyboard moves.
+  useEffect(() => {
+    if (!navByKeyboard.current) return
+    const list = listRef.current
+    if (!list) return
+    if (index === 0) {
+      list.scrollTop = 0
+      return
+    }
+    const row = list.querySelector<HTMLElement>(`[data-index="${index}"]`)
+    if (!row) return
+    const wrapper = row.parentElement
+    const target = wrapper && wrapper.firstElementChild?.classList.contains('palette-group') ? wrapper : row
+    const top = target.offsetTop
+    const bottom = row.offsetTop + row.offsetHeight
+    if (top < list.scrollTop) list.scrollTop = top
+    else if (bottom > list.scrollTop + list.clientHeight) list.scrollTop = bottom - list.clientHeight
+  }, [index, items])
 
   const onKey = (event: KeyboardEvent): void => {
     if (event.key === 'Escape') {
@@ -110,12 +140,11 @@ export default function CommandPalette(props: Props) {
       return
     }
     if (view.kind !== 'list') return
-    if (event.key === 'ArrowDown') {
+    const next = nextListIndex(event.key, index, items.length, pageSize())
+    if (next !== null && !((event.key === 'Home' || event.key === 'End') && query)) {
       event.preventDefault()
-      setIndex((i) => Math.min(items.length - 1, i + 1))
-    } else if (event.key === 'ArrowUp') {
-      event.preventDefault()
-      setIndex((i) => Math.max(0, i - 1))
+      navByKeyboard.current = true
+      setIndex(next)
     } else if (event.key === 'Enter') {
       event.preventDefault()
       items[index]?.run()
@@ -159,7 +188,7 @@ export default function CommandPalette(props: Props) {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
-            <div className="palette-list" role="listbox">
+            <div className="palette-list" role="listbox" ref={listRef}>
               {items.map((item, i) => {
                 const header = item.group !== lastGroup ? item.group : null
                 lastGroup = item.group
@@ -170,7 +199,12 @@ export default function CommandPalette(props: Props) {
                       role="option"
                       aria-selected={i === index}
                       className={`palette-item${i === index ? ' active' : ''}`}
-                      onMouseEnter={() => setIndex(i)}
+                      data-index={i}
+                      onMouseMove={() => {
+                        if (i === index) return
+                        navByKeyboard.current = false
+                        setIndex(i)
+                      }}
                       onClick={() => item.run()}
                     >
                       <span>{item.label}</span>
