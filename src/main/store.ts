@@ -52,13 +52,13 @@ export interface EncryptionStatus {
   reason?: string
 }
 
-function dataDir(): string {
+export function dataDir(): string {
   const dir = app.getPath('userData')
   mkdirSync(dir, { recursive: true })
   return dir
 }
 
-function writePrivate(path: string, contents: string): void {
+export function writePrivate(path: string, contents: string): void {
   const tmp = `${path}.${process.pid}.tmp`
   writeFileSync(tmp, contents, { encoding: 'utf8', mode: 0o600 })
   try {

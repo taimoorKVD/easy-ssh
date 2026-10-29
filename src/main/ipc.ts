@@ -8,6 +8,8 @@ import { SessionManager } from './ssh-manager'
 import { SftpManager } from './sftp-manager'
 import { TEXT_EDIT_LIMIT, isLikelyText } from '../shared/remote-fs'
 import { Store, encryptionStatus } from './store'
+import { SnippetStore } from './snippets'
+import { validateSnippet } from '../shared/snippets'
 import { ID_RE, isExecutableName, isSafeExternalUrl } from './security'
 import type { IpcMainEvent, IpcMainInvokeEvent } from 'electron'
 
@@ -68,6 +70,10 @@ export function registerIpc(
   sftp: SftpManager
 ): void {
   const sid = (value: unknown): string => asId(value, 'session')
+  const snippets = new SnippetStore()
+  handle('snippets:list', () => snippets.list())
+  handle('snippets:save', (_e, input: unknown) => snippets.save(validateSnippet(input)))
+  handle('snippets:delete', (_e, id: unknown) => snippets.remove(asId(id, 'snippet')))
   handle('sftp:home', (_e, s: unknown) => sftp.home(sid(s)))
   handle('sftp:list', (_e, s: unknown, p: unknown) => sftp.list(sid(s), asRemotePath(p)))
   handle('sftp:mkdir', (_e, s: unknown, p: unknown) => sftp.mkdir(sid(s), asRemotePath(p)))

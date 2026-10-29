@@ -1,10 +1,14 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import type { TransferProgress } from '../shared/remote-fs'
 import type { EasySshApi } from '../shared/api'
+import type { SnippetInput } from '../shared/snippets'
 import type { ConnectionInput, HostKeyPrompt, SessionStatus } from '../shared/types'
 
 const api = {
   getMeta: () => ipcRenderer.invoke('app:meta'),
+  listSnippets: () => ipcRenderer.invoke('snippets:list'),
+  saveSnippet: (input: SnippetInput) => ipcRenderer.invoke('snippets:save', input),
+  deleteSnippet: (id: string) => ipcRenderer.invoke('snippets:delete', id),
   listConnections: () => ipcRenderer.invoke('connections:list'),
   saveConnection: (input: ConnectionInput) => ipcRenderer.invoke('connections:save', input),
   deleteConnection: (id: string) => ipcRenderer.invoke('connections:delete', id),

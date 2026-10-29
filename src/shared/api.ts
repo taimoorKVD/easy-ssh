@@ -1,3 +1,4 @@
+import type { Snippet, SnippetInput } from './snippets'
 import type {
   AppMeta,
   ConnectionInput,
@@ -11,6 +12,9 @@ import type {
 import type { RemoteEntry, TransferProgress } from './remote-fs'
 
 export interface EasySshApi {
+  listSnippets(): Promise<Snippet[]>
+  saveSnippet(input: SnippetInput): Promise<Snippet>
+  deleteSnippet(id: string): Promise<void>
   getMeta(): Promise<AppMeta>
   listConnections(): Promise<ConnectionPublic[]>
   saveConnection(input: ConnectionInput): Promise<ConnectionPublic>

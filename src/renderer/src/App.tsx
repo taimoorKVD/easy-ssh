@@ -10,6 +10,7 @@ import { errorMessage } from './lib/errors'
 
 const loadFileManager = () => import('./components/FileManager').then((m) => ({ default: m.FileManager }))
 const FileManager = lazy(loadFileManager)
+const CommandPalette = lazy(() => import('./components/CommandPalette'))
 // Warm the File Manager chunk once the app is idle so the first switch is instant.
 setTimeout(() => void loadFileManager(), 1500)
 
@@ -68,6 +69,7 @@ export default function App() {
   const [deleting, setDeleting] = useState(false)
   const [hostKey, setHostKey] = useState<HostKeyPrompt | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  const [paletteOpen, setPaletteOpen] = useState(false)
 
   const writers = useRef(new Map<string, (data: string) => void>())
   const buffers = useRef(new Map<string, string>())
@@ -265,9 +267,10 @@ export default function App() {
       const target = event.target instanceof HTMLElement ? event.target : null
       const typing = Boolean(target?.closest('input, textarea, [contenteditable="true"]'))
       const inTerminal = Boolean(target?.closest('.xterm'))
-      if (meta && event.key.toLowerCase() === 'k') {
+      if (meta && (event.key.toLowerCase() === 'k' || (event.shiftKey && event.key.toLowerCase() === 'p'))) {
         event.preventDefault()
-        document.getElementById('connection-search')?.focus()
+        event.stopPropagation()
+        setPaletteOpen((open) => !open)
       }
       if (meta && event.key.toLowerCase() === 'n' && !typing) {
         event.preventDefault()
@@ -286,8 +289,8 @@ export default function App() {
         else if (formRef.current) setForm(null)
       }
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
   }, [closeTab])
 
   async function saveConnection(input: ConnectionInput): Promise<void> {
@@ -647,6 +650,34 @@ export default function App() {
         />
       )}
       <Toast message={toast} />
+      {paletteOpen && (
+        <Suspense fallback={null}>
+          <CommandPalette
+            connections={connections}
+            activeConnectionId={activeTab?.connectionId}
+            activeSessionId={activeTab?.phase === 'connected' ? activeTab.sessionId : undefined}
+            notify={notify}
+            onClose={() => setPaletteOpen(false)}
+            onConnect={(connection) => void openSession(connection)}
+            onRunInTerminal={(sessionId, input) => {
+              if (activeTab) setMode(activeTab.id, 'terminal')
+              window.easySsh.write(sessionId, input)
+            }}
+            actions={[
+              ...(activeTab
+                ? [
+                    { id: 'mode-terminal', label: 'Switch to Terminal', hint: activeTab.title, run: () => setMode(activeTab.id, 'terminal') },
+                    { id: 'mode-files', label: 'Switch to File Manager', hint: activeTab.title, run: () => setMode(activeTab.id, 'files') },
+                    { id: 'reconnect', label: 'Reconnect', hint: activeTab.title, run: () => void reconnect(activeTab) },
+                    { id: 'close-tab', label: 'Close tab', hint: activeTab.title, run: () => closeTab(activeTab.id) }
+                  ]
+                : []),
+              ...tabs.filter((t) => t.id !== activeTab?.id).map((t) => ({ id: `tab-${t.id}`, label: `Go to tab: ${t.title}`, run: () => setActiveTabId(t.id) })),
+              { id: 'new-conn', label: 'New connection…', run: () => { setFormError(null); setForm({}) } }
+            ]}
+          />
+        </Suspense>
+      )}
     </div>
   )
 }
