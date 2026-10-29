@@ -647,7 +647,14 @@ export function FileManager({ sessionId, active, connected, notify, onOpenTermin
             </div>
           )}
         </div>
-        {(loading || busy) && <div className="fm-loading" aria-live="polite"><span className="fm-spinner" />{loading ? 'Loading…' : 'Working…'}</div>}
+        {(loading || busy) && (
+          <>
+            <div className="fm-progress" aria-hidden="true"><span /></div>
+            <div className={`fm-loading${entries.length === 0 ? ' empty' : ''}`} role="status" aria-live="polite">
+              <span className="fm-loading-pill"><span className="fm-spinner" />{loading ? 'Loading…' : 'Working…'}</span>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="fm-statusline">
