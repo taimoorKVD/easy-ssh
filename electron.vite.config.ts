@@ -13,6 +13,8 @@ export default defineConfig({
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
+    // Sandboxed preloads must be CommonJS.
+    build: { rollupOptions: { output: { format: 'cjs', entryFileNames: '[name].cjs' } } },
     resolve: {
       alias: {
         '@shared': resolve('src/shared')

@@ -56,6 +56,7 @@ export function HostKeyDialog({
   onAcceptOnce: () => void
   onTrust: () => void
 }) {
+  const [verified, setVerified] = useState(false)
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') onReject()
@@ -88,14 +89,23 @@ export function HostKeyDialog({
         >
           {prompt.fingerprint}
         </button>
+        {prompt.changed && (
+          <>
+            {prompt.previousFingerprint && <p className="dialog-body">Previously trusted: <code>{prompt.previousFingerprint}</code></p>}
+            <label className="dialog-body" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input type="checkbox" checked={verified} onChange={(e) => setVerified(e.target.checked)} />
+              I checked the new fingerprint with the server admin
+            </label>
+          </>
+        )}
         <footer className="modal-actions">
           <button type="button" className="btn btn-ghost" onClick={onReject}>
             Reject
           </button>
-          <button type="button" className="btn btn-ghost" onClick={onAcceptOnce}>
+          <button type="button" className="btn btn-ghost" onClick={onAcceptOnce} disabled={prompt.changed && !verified}>
             Accept once
           </button>
-          <button type="button" className="btn btn-primary" onClick={onTrust} autoFocus>
+          <button type="button" className="btn btn-primary" onClick={onTrust} autoFocus={!prompt.changed} disabled={prompt.changed && !verified}>
             {prompt.changed ? 'Replace trusted key' : 'Trust this key'}
           </button>
         </footer>

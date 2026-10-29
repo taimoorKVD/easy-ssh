@@ -69,6 +69,7 @@ export interface HostKeyPrompt {
   port: number
   fingerprint: string
   changed: boolean
+  previousFingerprint?: string
 }
 
 export interface AppMeta {

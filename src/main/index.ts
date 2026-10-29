@@ -5,6 +5,7 @@ import type { SessionStatus } from '../shared/types'
 import { registerIpc } from './ipc'
 import { recordSmokeData, recordSmokeStatus, runSmoke } from './smoke'
 import { OutputBatcher } from '../shared/batcher'
+import { isSafeExternalUrl } from './security'
 import { SessionManager } from './ssh-manager'
 import { SftpManager } from './sftp-manager'
 import { Store } from './store'
@@ -50,25 +51,31 @@ function createWindow(): BrowserWindow {
     autoHideMenuBar: true,
     icon: iconFile(),
     webPreferences: {
-      preload: existsSync(join(__dirname, '../preload/index.mjs'))
-        ? join(__dirname, '../preload/index.mjs')
-        : join(__dirname, '../preload/index.js'),
+      preload: join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      nodeIntegrationInWorker: false,
+      nodeIntegrationInSubFrames: false,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      webviewTag: false,
+      navigateOnDragDrop: false,
       spellcheck: false
     }
   })
 
   win.once('ready-to-show', () => win.show())
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//i.test(url)) void shell.openExternal(url)
+    if (isSafeExternalUrl(url)) void shell.openExternal(url)
     return { action: 'deny' }
   })
   win.webContents.on('will-navigate', (event, url) => {
     const current = win.webContents.getURL()
     if (url !== current) event.preventDefault()
   })
+  win.webContents.on('will-redirect', (event) => event.preventDefault())
+  win.webContents.on('will-attach-webview', (event) => event.preventDefault())
 
   if (!app.isPackaged) {
     win.webContents.on('before-input-event', (event, input) => {
@@ -144,6 +151,10 @@ if (gotLock) {
   })
 
   app.whenReady().then(async () => {
+    const { session: electronSession } = await import('electron')
+    // No camera, mic, notifications, geolocation, etc. for the renderer.
+    electronSession.defaultSession.setPermissionRequestHandler((_wc, _perm, callback) => callback(false))
+    electronSession.defaultSession.setPermissionCheckHandler(() => false)
     if (app.isPackaged) {
       const { session } = await import('electron')
       session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
@@ -151,7 +162,7 @@ if (gotLock) {
           responseHeaders: {
             ...details.responseHeaders,
             'Content-Security-Policy': [
-              "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; font-src 'self' data:"
+              "default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
             ]
           }
         })

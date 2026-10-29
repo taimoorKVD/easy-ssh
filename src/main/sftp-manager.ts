@@ -16,6 +16,10 @@ import {
 } from '../shared/remote-fs'
 import type { SessionManager } from './ssh-manager'
 import { runLimited } from '../shared/batcher'
+import { assertInside, safeLocalName } from './security'
+
+const MAX_TREE_FILES = 50_000
+const MAX_TREE_DEPTH = 64
 
 const FILE_CONCURRENCY = 4
 const FAST_OPTS = { concurrency: 32, chunkSize: 32 * 1024 }
@@ -35,10 +39,6 @@ function wrap<T>(path: string | undefined, run: (done: (error: Error | null | un
   })
 }
 
-function safeLocalName(name: string): string {
-  const cleaned = name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/[. ]+$/, '')
-  return cleaned || 'file'
-}
 
 interface Plan {
   dirs: string[]
@@ -198,22 +198,27 @@ export class SftpManager {
 
   private async planRemote(sftp: SFTPWrapper, remotePaths: string[], localDir: string, targetName?: string): Promise<Plan> {
     const plan: Plan = { dirs: [], files: [] }
-    const walk = async (remote: string, local: string): Promise<void> => {
-      const stats = await wrap<Stats>(remote, (done) => sftp.stat(remote, done))
+    const walk = async (remote: string, local: string, depth = 0, top = true): Promise<void> => {
+      assertInside(localDir, local)
+      if (depth > MAX_TREE_DEPTH) throw new Error('That folder is nested too deeply to download.')
+      if (plan.files.length + plan.dirs.length > MAX_TREE_FILES) throw new Error('That selection has too many files to download at once.')
+      // Follow a symlink only for the item the user picked; inside folders, links are skipped to avoid loops.
+      const stats = await wrap<Stats>(remote, (done) => (top ? sftp.stat(remote, done) : sftp.lstat(remote, done)))
+      if (stats.isSymbolicLink()) return
       if (stats.isDirectory()) {
         plan.dirs.push(local)
         const items = await wrap<FileEntryWithStats[]>(remote, (done) => sftp.readdir(remote, done))
         await runLimited(
           items.filter((item) => item.filename !== '.' && item.filename !== '..'),
           8,
-          (item) => walk(joinRemote(remote, item.filename), join(local, safeLocalName(item.filename)))
+          (item) => walk(joinRemote(remote, item.filename), join(local, safeLocalName(item.filename)), depth + 1, false)
         )
-      } else {
+      } else if (stats.isFile()) {
         plan.files.push({ from: remote, to: local, size: stats.size })
       }
     }
     for (const remote of remotePaths) {
-      await walk(remote, join(localDir, targetName && remotePaths.length === 1 ? targetName : safeLocalName(baseNameRemote(remote))))
+      await walk(remote, join(localDir, safeLocalName(targetName && remotePaths.length === 1 ? targetName : baseNameRemote(remote))))
     }
     return plan
   }

@@ -366,7 +366,8 @@ export class SessionManager {
       host: session.host,
       port: session.port,
       fingerprint,
-      changed: Boolean(known)
+      changed: Boolean(known),
+      previousFingerprint: known?.fingerprint
     })
   }
 }
