@@ -17,7 +17,8 @@
     "dist": "npm run build && electron-builder",
     "dist:win": "npm run build && electron-builder --win nsis",
     "dist:mac": "npm run build && electron-builder --mac dmg zip",
-    "dist:linux": "npm run build && electron-builder --linux AppImage deb"
+    "dist:linux": "npm run build && electron-builder --linux AppImage deb",
+    "smoke:launch": "node scripts/smoke-launch.mjs"
   },
   "dependencies": {
     "ssh2": "^1.17.0"
@@ -46,7 +47,7 @@
     "appId": "app.easy-ssh.desktop",
     "productName": "easy-ssh",
     "executableName": "easy-ssh",
-    "copyright": "Copyright © 2026 easy-ssh",
+    "copyright": "Copyright \u00a9 2026 easy-ssh",
     "directories": {
       "output": "release",
       "buildResources": "build"

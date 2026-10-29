@@ -2,7 +2,10 @@ import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { safeStorage } from 'electron'
-import { utils, type ParsedKey } from 'ssh2'
+import ssh2, { type ParsedKey } from 'ssh2'
+
+// ssh2 is CommonJS; the ESM main bundle can only take its default export.
+const { utils } = ssh2
 import { isValidPublicKeyLine, sanitizeKeyName, type KeyPublic } from '../shared/keys'
 import { dataDir, encryptionStatus, writePrivate } from './store'
 

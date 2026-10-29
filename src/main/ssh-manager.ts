@@ -1,7 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { StringDecoder } from 'node:string_decoder'
-import { Client, type ClientChannel } from 'ssh2'
+import ssh2, { type ClientChannel, type Client as SshClient } from 'ssh2'
+
+// ssh2 is CommonJS; the ESM main bundle can only take its default export.
+const { Client } = ssh2
+type Client = SshClient
 import { buildStartupScript } from '../shared/shell'
 import type { HostKeyPrompt, SessionErrorCode, SessionStatus } from '../shared/types'
 import { Store } from './store'
