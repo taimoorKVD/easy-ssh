@@ -81,6 +81,14 @@ jobs:
       - name: Set version for this build
         run: npm version "${{ steps.version.outputs.version }}" --no-git-tag-version --allow-same-version
 
+      - name: Create and push tag
+        run: |
+          V=${{ steps.version.outputs.version }}
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "v$V" -m "easy-ssh v$V" "$GITHUB_SHA"
+          git push origin "v$V"
+
       - name: Build and publish release
         env:
           NODE_OPTIONS: --experimental-require-module
@@ -98,3 +106,12 @@ jobs:
           gh release upload "v$V" release/easy-ssh-Setup.exe --clobber
           gh release edit "v$V" --draft=false --latest
           gh release view "v$V" --json url,isDraft,assets --jq '{url, isDraft, assets: [.assets[].name]}'
+
+      - name: Clean up tag and release if anything failed
+        if: failure() && steps.version.outputs.version != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          V=${{ steps.version.outputs.version }}
+          gh release delete "v$V" --yes --cleanup-tag 2>/dev/null || true
+          git push origin ":refs/tags/v$V" 2>/dev/null || true
