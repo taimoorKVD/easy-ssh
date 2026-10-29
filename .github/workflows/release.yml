@@ -1,0 +1,100 @@
+name: Release
+
+# Fully automatic: every code push to main publishes the next version.
+# Version = latest vX.Y.Z tag + patch (or minor/major via [minor]/[major] in the commit message
+# or the workflow_dispatch input). With no tags yet, package.json's version is used as is (1.1.0).
+# The version is set only for the build; nothing is committed back, so there are no loops or conflicts.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute next version
+        id: version
+        env:
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          INPUT_BUMP: ${{ github.event.inputs.bump }}
+        run: |
+          git fetch --tags --force
+          BUMP=patch
+          case "$COMMIT_MSG" in *"[major]"*) BUMP=major ;; *"[minor]"*) BUMP=minor ;; esac
+          [ -n "$INPUT_BUMP" ] && BUMP="$INPUT_BUMP"
+          PKG=$(node -p "require('./package.json').version")
+          LAST=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1 | sed 's/^v//')
+          NEXT=$(node -e '
+            const [last, pkg, bump] = process.argv.slice(1)
+            const p = (v) => v.split(".").map(Number)
+            const cmp = (a, b) => { for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] - b[i]; return 0 }
+            if (!last) { console.log(pkg); process.exit(0) }
+            let [x, y, z] = p(last)
+            if (bump === "major") { x++; y = 0; z = 0 } else if (bump === "minor") { y++; z = 0 } else z++
+            let next = [x, y, z]
+            if (cmp(p(pkg), next) > 0) next = p(pkg)   // a manual bump in package.json wins
+            console.log(next.join("."))
+          ' "$LAST" "$PKG" "$BUMP")
+          if git rev-parse -q --verify "refs/tags/v$NEXT" >/dev/null; then
+            echo "::error::Tag v$NEXT already exists"; exit 1
+          fi
+          echo "Last tag: ${LAST:-none}, bump: $BUMP, releasing v$NEXT"
+          echo "version=$NEXT" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck and test
+        run: |
+          npm run typecheck
+          npm test
+
+      - name: Set version for this build
+        run: npm version "${{ steps.version.outputs.version }}" --no-git-tag-version --allow-same-version
+
+      - name: Build and publish release
+        env:
+          NODE_OPTIONS: --experimental-require-module
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npm run build
+          npx electron-builder --win nsis --publish always
+
+      - name: Upload stable-name copy for the website link
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          V=${{ steps.version.outputs.version }}
+          cp "release/easy-ssh-Setup-$V.exe" release/easy-ssh-Setup.exe
+          gh release upload "v$V" release/easy-ssh-Setup.exe --clobber
+          gh release edit "v$V" --draft=false --latest
+          gh release view "v$V" --json url,isDraft,assets --jq '{url, isDraft, assets: [.assets[].name]}'

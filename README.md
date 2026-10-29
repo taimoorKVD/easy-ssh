@@ -96,3 +96,7 @@ Startup commands are sent as you typed them. Only the directory path is shell-qu
 - `Ctrl/Cmd+K` focus search
 - `Ctrl/Cmd+W` close the active tab when the terminal is not focused
 - In the terminal: `Ctrl+Shift+C` / `Ctrl+Shift+V` copy and paste (`Cmd+C` when there is a selection, `Cmd+V` to paste on macOS). Right-click pastes.
+
+## Releasing
+
+Releases are automatic: every code push to `main` publishes the next version (add `[minor]`/`[major]` to the commit message for bigger bumps). See [RELEASING.md](RELEASING.md).
