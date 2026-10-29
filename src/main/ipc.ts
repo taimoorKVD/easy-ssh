@@ -1,7 +1,7 @@
 import { app, clipboard, dialog, ipcMain, shell, type BrowserWindow } from 'electron'
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { homedir, userInfo } from 'node:os'
-import { basename, dirname, isAbsolute, join } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import type { ConnectionInput } from '../shared/types'
 import { openSystemTerminal } from './system-terminal'
 import { SessionManager } from './ssh-manager'
@@ -15,6 +15,9 @@ import { STATS_COMMAND } from '../shared/stats'
 import { ForwardManager } from './forward-manager'
 import { authorizedKeysCommand } from '../shared/keys'
 import { parseSshConfig } from '../shared/ssh-config'
+import { buildSearchCommand, parseSearchOutput, validateSearch } from '../shared/remote-search'
+import { spawn } from 'node:child_process'
+import { readdir, stat } from 'node:fs/promises'
 import type { Client } from 'ssh2'
 import type { IpcMainEvent, IpcMainInvokeEvent } from 'electron'
 
@@ -41,7 +44,7 @@ function on(channel: string, fn: Listener): void {
 }
 
 /** Run one fixed command on an exec channel, with a timeout and output cap. */
-export function runExec(client: Client, command: string, timeoutMs = 10_000, cap = 65_536): Promise<{ code: number | null; out: string }> {
+export function runExec(client: Client, command: string, timeoutMs = 10_000, cap = 65_536, signal?: AbortSignal): Promise<{ code: number | null; out: string }> {
   return new Promise((resolve, reject) => {
     let out = ''
     let settled = false
@@ -64,6 +67,15 @@ export function runExec(client: Client, command: string, timeoutMs = 10_000, cap
       stream.on('data', onChunk)
       stream.stderr.on('data', onChunk)
       stream.on('close', (code: number | null) => done(() => resolve({ code, out })))
+      signal?.addEventListener('abort', () => {
+        try {
+          stream.signal('KILL')
+        } catch {
+          /* not supported by every server */
+        }
+        stream.close()
+        done(() => reject(new Error('Search canceled.')))
+      })
     })
   })
 }
@@ -211,6 +223,70 @@ export function registerIpc(
     if (result.canceled || !result.filePaths[0]) return false
     await sftp.download(sessionId, paths, result.filePaths[0])
     return true
+  })
+  const searches = new Map<string, AbortController>()
+  handle('sftp:search', async (_e, s: unknown, searchId: unknown, dir: unknown, mode: unknown, pattern: unknown) => {
+    const sessionId = sid(s)
+    const id = asId(searchId, 'search')
+    const q = validateSearch(dir, mode, pattern)
+    const client = sessions.client(sessionId)
+    if (!client) throw new Error('Connect first, then search.')
+    searches.get(id)?.abort()
+    const controller = new AbortController()
+    searches.set(id, controller)
+    try {
+      const { out } = await runExec(client, buildSearchCommand(q.dir, q.mode, q.pattern), 60_000, 256 * 1024, controller.signal)
+      return parseSearchOutput(q.mode, out)
+    } finally {
+      if (searches.get(id) === controller) searches.delete(id)
+    }
+  })
+  handle('sftp:searchCancel', (_e, searchId: unknown) => {
+    searches.get(asId(searchId, 'search'))?.abort()
+  })
+  handle('sftp:retry', (_e, transferId: unknown) => sftp.retry(asId(transferId, 'transfer')))
+  handle('sftp:cancel', (_e, transferId: unknown) => sftp.cancel(asId(transferId, 'transfer')))
+  handle('sftp:editLocal', async (_e, s: unknown, p: unknown) => {
+    const remote = asRemotePath(p)
+    if (isExecutableName(remote.split('/').pop() ?? '')) {
+      throw new Error('For your safety, easy-ssh will not open programs or scripts from a server. Download it instead.')
+    }
+    let editor = 'default app'
+    await sftp.editLocal(
+      sid(s),
+      remote,
+      async (local) => {
+        const code = findVsCode()
+        if (code) {
+          spawn(code, [local], { detached: true, stdio: 'ignore', windowsHide: false }).unref()
+          editor = 'VS Code'
+          return
+        }
+        const error = await shell.openPath(local)
+        if (error) throw new Error(`No app could open it: ${error}`)
+      },
+      (path, error) => send('sftp:autoUploaded', { sessionId: sid(s), path, error })
+    )
+    return editor
+  })
+  handle('local:home', () => homedir())
+  handle('local:list', async (_e, dir: unknown) => {
+    if (typeof dir !== 'string' || !isAbsolute(dir) || dir.includes('\0') || dir.length > 4096) throw new Error('Invalid local folder.')
+    const items = await readdir(dir, { withFileTypes: true })
+    const entries = await Promise.all(
+      items.slice(0, 5000).map(async (item) => {
+        const full = join(dir, item.name)
+        const st = await stat(full).catch(() => null)
+        return { name: item.name, path: full, kind: item.isDirectory() || st?.isDirectory() ? 'dir' : 'file', size: st?.size ?? 0, mtime: st?.mtimeMs ?? 0 }
+      })
+    )
+    return { path: resolve(dir), parent: dirname(resolve(dir)), entries }
+  })
+  handle('sftp:downloadTo', (_e, s: unknown, p: unknown, localDir: unknown) => {
+    if (typeof localDir !== 'string' || !isAbsolute(localDir) || localDir.includes('\0') || !existsSync(localDir) || !statSync(localDir).isDirectory()) {
+      throw new Error('Choose a local folder first.')
+    }
+    return sftp.download(sid(s), asRemotePaths(p), localDir)
   })
   handle('sftp:isText', (_e, name: unknown) => typeof name === 'string' && isLikelyText(name))
 
@@ -398,4 +474,19 @@ export function registerIpc(
     else win.maximize()
   })
   handle('window:close', () => getWindow()?.close())
+}
+
+function findVsCode(): string | null {
+  const env = process.env
+  const candidates =
+    process.platform === 'win32'
+      ? [
+          env.LOCALAPPDATA && join(env.LOCALAPPDATA, 'Programs', 'Microsoft VS Code', 'Code.exe'),
+          env.ProgramFiles && join(env.ProgramFiles, 'Microsoft VS Code', 'Code.exe'),
+          env['ProgramFiles(x86)'] && join(env['ProgramFiles(x86)'], 'Microsoft VS Code', 'Code.exe')
+        ]
+      : process.platform === 'darwin'
+        ? ['/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code']
+        : ['/usr/bin/code', '/usr/local/bin/code', '/snap/bin/code']
+  return candidates.find((c): c is string => Boolean(c) && existsSync(c as string)) ?? null
 }

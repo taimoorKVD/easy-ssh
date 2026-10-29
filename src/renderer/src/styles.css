@@ -939,3 +939,32 @@ html, body, #root { width: 100vw; height: 100vh; overflow: hidden; }
 .conn-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
 .conn-chip { font-size: 10.5px; color: var(--text-dim); background: rgba(255, 255, 255, 0.05); border-radius: 999px; padding: 0 6px; cursor: pointer; }
 .conn-chip:hover { color: var(--accent); background: var(--accent-dim); }
+
+/* File manager extras */
+.fm-body { display: flex; flex: 1; min-height: 0; }
+.fm-body > .fm-table { flex: 1; min-width: 0; }
+.fm-side { width: 320px; flex: none; border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: var(--bg-inset); }
+.fm-side.fm-local { order: -1; border-left: 0; border-right: 1px solid var(--line); }
+.fm-side-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+.fm-side-head strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fm-side-body { overflow: auto; flex: 1; padding: 6px; display: flex; flex-direction: column; gap: 2px; }
+.fm-search-form { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; }
+.fm-search-form input { background: var(--bg); border: 1px solid var(--line-strong); border-radius: 8px; padding: 6px 8px; color: var(--text); }
+.fm-hit, .fm-local-row { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; border: 0; background: transparent; color: var(--text); padding: 5px 8px; border-radius: 7px; font-size: 12px; min-width: 0; }
+.fm-hit:hover, .fm-local-row:hover { background: rgba(255, 255, 255, 0.05); }
+.fm-hit-path { font-family: var(--mono); color: var(--accent); word-break: break-all; }
+.fm-hit-text { font-family: var(--mono); color: var(--text-dim); white-space: pre; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.fm-local-row { flex-direction: row; align-items: center; gap: 8px; }
+.fm-local-row.selected { background: var(--accent-dim); }
+.fm-local-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fm-local-bar, .fm-local-actions { display: flex; align-items: center; gap: 6px; padding: 6px 10px; }
+.fm-local-path { font-family: var(--mono); font-size: 11.5px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; }
+.fm-bookmarks { position: relative; }
+.fm-bookmark-menu { position: absolute; top: 100%; right: 0; z-index: 20; min-width: 240px; max-height: 320px; overflow: auto; background: var(--bg-raised, var(--bg)); border: 1px solid var(--line-strong); border-radius: 10px; padding: 4px; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+.fm-bookmark-menu div { display: flex; align-items: center; }
+.fm-bookmark-menu button { border: 0; background: transparent; color: var(--text); text-align: left; padding: 6px 8px; border-radius: 6px; font-family: var(--mono); font-size: 12px; }
+.fm-bookmark-menu button:first-child { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fm-bookmark-menu button:hover { background: rgba(255, 255, 255, 0.06); }
+.fm-transfer-actions { display: flex; gap: 6px; margin-top: 4px; }
+.fm-transfer-actions button { font-size: 11.5px; padding: 2px 8px; }
+.fm-transfer.queued .fm-bar span, .fm-transfer.canceled .fm-bar span { background: var(--text-faint); }

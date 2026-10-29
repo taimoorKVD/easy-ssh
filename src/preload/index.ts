@@ -76,6 +76,19 @@ const api = {
   sftpUpload: (s: string, local: string[], dir: string) => ipcRenderer.invoke('sftp:upload', s, local, dir),
   sftpUploadPick: (s: string, dir: string, folders: boolean) => ipcRenderer.invoke('sftp:uploadPick', s, dir, folders),
   sftpDownload: (s: string, p: string[], single: boolean) => ipcRenderer.invoke('sftp:download', s, p, single),
+  sftpSearch: (s: string, id: string, dir: string, mode: string, pattern: string) => ipcRenderer.invoke('sftp:search', s, id, dir, mode, pattern),
+  sftpSearchCancel: (id: string) => ipcRenderer.invoke('sftp:searchCancel', id),
+  sftpRetry: (id: string) => ipcRenderer.invoke('sftp:retry', id),
+  sftpCancel: (id: string) => ipcRenderer.invoke('sftp:cancel', id),
+  sftpEditLocal: (s: string, p: string) => ipcRenderer.invoke('sftp:editLocal', s, p),
+  sftpDownloadTo: (s: string, p: string[], dir: string) => ipcRenderer.invoke('sftp:downloadTo', s, p, dir),
+  localHome: () => ipcRenderer.invoke('local:home'),
+  localList: (dir: string) => ipcRenderer.invoke('local:list', dir),
+  onAutoUploaded: (callback) => {
+    const listener = (_event: IpcRendererEvent, info: { sessionId: string; path: string; error?: string }): void => callback(info)
+    ipcRenderer.on('sftp:autoUploaded', listener)
+    return () => ipcRenderer.removeListener('sftp:autoUploaded', listener)
+  },
   pathForFile: (file: File) => webUtils.getPathForFile(file),
   onSftpProgress: (callback) => {
     const listener = (_event: IpcRendererEvent, progress: TransferProgress) => callback(progress)

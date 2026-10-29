@@ -23,8 +23,9 @@ export interface TransferProgress {
   bytesTotal: number
   filesDone: number
   filesTotal: number
-  state: 'running' | 'done' | 'error'
+  state: 'queued' | 'running' | 'done' | 'error' | 'canceled'
   error?: string
+  retryable?: boolean
 }
 
 export const TEXT_EDIT_LIMIT = 2 * 1024 * 1024

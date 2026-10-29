@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { promises as fs } from 'node:fs'
+import { createReadStream, createWriteStream, promises as fs, watch, type FSWatcher } from 'node:fs'
+import { pipeline } from 'node:stream/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { Transform } from 'node:stream'
@@ -22,7 +23,11 @@ const MAX_TREE_FILES = 50_000
 const MAX_TREE_DEPTH = 64
 
 const FILE_CONCURRENCY = 4
+const MAX_ACTIVE_TRANSFERS = 2
+const MAX_WATCHES = 32
 const FAST_OPTS = { concurrency: 32, chunkSize: 32 * 1024 }
+// Parallel transfers can leave holes inside the last in-flight window, so resume re-sends that window.
+const RESUME_BACKOFF = FAST_OPTS.concurrency * FAST_OPTS.chunkSize
 
 type ProgressSink = (progress: TransferProgress) => void
 
@@ -47,6 +52,12 @@ interface Plan {
 
 export class SftpManager {
   private channels = new Map<string, { client: Client; sftp: Promise<SFTPWrapper> }>()
+  private active = 0
+  private waiting: Array<() => void> = []
+  /** Failed transfers that can be retried (resuming partial files). */
+  private failed = new Map<string, { sessionId: string; retry: () => Promise<void> }>()
+  private cancels = new Map<string, () => void>()
+  private watches = new Map<string, { sessionId: string; watcher: FSWatcher; timer?: NodeJS.Timeout }>()
 
   constructor(
     private readonly sessions: SessionManager,
@@ -79,6 +90,13 @@ export class SftpManager {
   }
 
   release(sessionId: string): void {
+    for (const [key, w] of this.watches) {
+      if (w.sessionId !== sessionId) continue
+      clearTimeout(w.timer)
+      w.watcher.close()
+      this.watches.delete(key)
+    }
+    for (const [id, f] of this.failed) if (f.sessionId === sessionId) this.failed.delete(id)
     const cached = this.channels.get(sessionId)
     this.channels.delete(sessionId)
     void cached?.sftp.then((wrapper) => wrapper.end()).catch(() => undefined)
@@ -238,22 +256,33 @@ export class SftpManager {
     return plan
   }
 
-  async download(sessionId: string, remotePaths: string[], localDir: string, label?: string, targetName?: string): Promise<void> {
+  async download(sessionId: string, remotePaths: string[], localDir: string, label?: string, targetName?: string, resume = false): Promise<void> {
     const sftp = await this.sftp(sessionId)
     await this.transfer(sessionId, 'download', label ?? this.label('Downloading', remotePaths.map(baseNameRemote)), async (report) => {
       const plan = await this.planRemote(sftp, remotePaths, localDir, targetName)
       report.start(plan)
       for (const dir of plan.dirs) await fs.mkdir(dir, { recursive: true })
       await runLimited(plan.files, FILE_CONCURRENCY, async (file) => {
-        await wrap<void>(file.from, (done) =>
-          sftp.fastGet(file.from, file.to, { ...FAST_OPTS, step: (_t, chunk) => report.add(chunk) }, (err) => done(err))
-        )
+        report.check()
+        const size = resume ? await fs.stat(file.to).then((st) => (st.isFile() ? st.size : -1), () => -1) : -1
+        const have = size > 0 && size < file.size ? Math.max(0, size - RESUME_BACKOFF) : size
+        if (have === file.size) {
+          report.add(file.size)
+        } else if (have > 0 && have < file.size) {
+          report.add(have)
+          await fs.truncate(file.to, have)
+          await pipeline(sftp.createReadStream(file.from, { start: have }), report.meter(), createWriteStream(file.to, { flags: 'a' }))
+        } else {
+          await wrap<void>(file.from, (done) =>
+            sftp.fastGet(file.from, file.to, { ...FAST_OPTS, step: (_t, chunk) => report.add(chunk) }, (err) => done(err))
+          )
+        }
         report.fileDone()
       })
-    })
+    }, () => this.download(sessionId, remotePaths, localDir, label, targetName, true), sftp)
   }
 
-  async upload(sessionId: string, localPaths: string[], remoteDir: string): Promise<void> {
+  async upload(sessionId: string, localPaths: string[], remoteDir: string, resume = false): Promise<void> {
     const sftp = await this.sftp(sessionId)
     await this.transfer(sessionId, 'upload', this.label('Uploading', localPaths.map((path) => basename(path))), async (report) => {
       const plan = await this.planLocal(localPaths, remoteDir)
@@ -265,12 +294,74 @@ export class SftpManager {
         })
       }
       await runLimited(plan.files, FILE_CONCURRENCY, async (file) => {
-        await wrap<void>(file.to, (done) =>
-          sftp.fastPut(file.from, file.to, { ...FAST_OPTS, step: (_t, chunk) => report.add(chunk) }, (err) => done(err))
-        )
+        report.check()
+        const size = resume
+          ? await wrap<Stats>(file.to, (cb) => sftp.stat(file.to, cb)).then((st) => (st.isFile() ? st.size : -1), () => -1)
+          : -1
+        const have = size > 0 && size < file.size ? Math.max(0, size - RESUME_BACKOFF) : size
+        if (have === file.size) {
+          report.add(file.size)
+        } else if (have > 0 && have < file.size) {
+          report.add(have)
+          await pipeline(createReadStream(file.from, { start: have }), report.meter(), sftp.createWriteStream(file.to, { flags: 'r+', start: have }))
+        } else {
+          await wrap<void>(file.to, (done) =>
+            sftp.fastPut(file.from, file.to, { ...FAST_OPTS, step: (_t, chunk) => report.add(chunk) }, (err) => done(err))
+          )
+        }
         report.fileDone()
       })
-    })
+    }, () => this.upload(sessionId, localPaths, remoteDir, true), sftp)
+  }
+
+  retry(transferId: string): Promise<void> {
+    const item = this.failed.get(transferId)
+    if (!item) throw new Error('That transfer can no longer be retried.')
+    this.failed.delete(transferId)
+    return item.retry()
+  }
+
+  cancel(transferId: string): void {
+    this.cancels.get(transferId)?.()
+  }
+
+  /**
+   * Download a file to a private temp folder, open it in an editor, and upload it back whenever it is saved.
+   * Watches end when the session closes.
+   */
+  async editLocal(sessionId: string, remote: string, open: (local: string) => Promise<void>, onSaved: (remote: string, error?: string) => void): Promise<void> {
+    const key = `${sessionId}\0${remote}`
+    const existing = this.watches.get(key)
+    if (existing) {
+      clearTimeout(existing.timer)
+      existing.watcher.close()
+      this.watches.delete(key)
+    }
+    if (this.watches.size >= MAX_WATCHES) throw new Error('Too many files are open for editing. Close some sessions first.')
+    const local = await this.downloadToTemp(sessionId, remote)
+    let last = (await fs.stat(local)).mtimeMs
+    const entry: { sessionId: string; watcher: FSWatcher; timer?: NodeJS.Timeout } = {
+      sessionId,
+      watcher: watch(local, () => {
+        clearTimeout(entry.timer)
+        entry.timer = setTimeout(() => {
+          void (async () => {
+            const st = await fs.stat(local).catch(() => null)
+            if (!st || st.mtimeMs === last) return
+            last = st.mtimeMs
+            try {
+              const sftp = await this.sftp(sessionId)
+              await wrap<void>(remote, (done) => sftp.fastPut(local, remote, FAST_OPTS, (err) => done(err)))
+              onSaved(remote)
+            } catch (error) {
+              onSaved(remote, friendlySftpError(error, remote))
+            }
+          })()
+        }, 400)
+      })
+    }
+    this.watches.set(key, entry)
+    await open(local)
   }
 
   private label(verb: string, names: string[]): string {
@@ -282,7 +373,9 @@ export class SftpManager {
     sessionId: string,
     kind: 'upload' | 'download',
     label: string,
-    run: (report: { start(plan: Plan): void; meter(): Transform; add(bytes: number): void; fileDone(): void }) => Promise<void>
+    run: (report: { start(plan: Plan): void; meter(): Transform; add(bytes: number): void; fileDone(): void; check(): void }) => Promise<void>,
+    retry?: () => Promise<void>,
+    channel?: SFTPWrapper
   ): Promise<void> {
     const state: TransferProgress = {
       sessionId,
@@ -293,8 +386,12 @@ export class SftpManager {
       bytesTotal: 0,
       filesDone: 0,
       filesTotal: 0,
-      state: 'running'
+      state: this.active >= MAX_ACTIVE_TRANSFERS ? 'queued' : 'running'
     }
+    let canceled = false
+    this.cancels.set(state.transferId, () => {
+      canceled = true
+    })
     let last = 0
     const emit = (force = false): void => {
       const now = Date.now()
@@ -303,8 +400,22 @@ export class SftpManager {
       this.progress({ ...state })
     }
     emit(true)
+    if (this.active >= MAX_ACTIVE_TRANSFERS) await new Promise<void>((resolve) => this.waiting.push(resolve))
+    this.active += 1
+    state.state = 'running'
     try {
-      await run({
+      if (canceled) throw new Error('Canceled.')
+      // ssh2 does not always fail in-flight fastGet/fastPut when the connection drops, so race the channel close.
+      let onClose: (() => void) | undefined
+      const lost = new Promise<never>((_, reject) => {
+        onClose = () => reject(new Error('The connection was lost. Reconnect, then retry to resume.'))
+        channel?.once('close', onClose)
+      })
+      lost.catch(() => undefined)
+      await Promise.race([lost, run({
+        check: () => {
+          if (canceled) throw new Error('Canceled.')
+        },
         start: (plan) => {
           state.filesTotal = plan.files.length
           state.bytesTotal = plan.files.reduce((sum, file) => sum + file.size, 0)
@@ -313,6 +424,7 @@ export class SftpManager {
         meter: () =>
           new Transform({
             transform(chunk: Buffer, _enc, callback) {
+              if (canceled) return callback(new Error('Canceled.'))
               state.bytesDone += chunk.length
               emit()
               callback(null, chunk)
@@ -326,14 +438,25 @@ export class SftpManager {
           state.filesDone += 1
           emit()
         }
+      })]).finally(() => {
+        if (onClose) channel?.removeListener('close', onClose)
       })
       state.state = 'done'
       emit(true)
     } catch (error) {
-      state.state = 'error'
-      state.error = friendlySftpError(error)
+      state.state = canceled ? 'canceled' : 'error'
+      state.error = canceled ? 'Canceled. Retry resumes where it stopped.' : friendlySftpError(error)
+      if (retry) {
+        state.retryable = true
+        this.failed.set(state.transferId, { sessionId, retry })
+        if (this.failed.size > 50) this.failed.delete(this.failed.keys().next().value as string)
+      }
       emit(true)
       throw new Error(state.error)
+    } finally {
+      this.active -= 1
+      this.cancels.delete(state.transferId)
+      this.waiting.shift()?.()
     }
   }
 }

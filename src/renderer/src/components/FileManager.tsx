@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent } from 'react'
 import {
   breadcrumbs,
   filterHidden,
@@ -22,8 +22,22 @@ import {
 import { errorMessage } from '../lib/errors'
 import { ConfirmDialog } from './Overlays'
 
+const SearchPanel = lazy(() => import('./FileManagerExtras').then((m) => ({ default: m.SearchPanel })))
+const LocalPane = lazy(() => import('./FileManagerExtras').then((m) => ({ default: m.LocalPane })))
+
+const BOOKMARK_KEY = (connectionId: string): string => `easy-ssh.bookmarks.${connectionId}`
+function loadBookmarks(connectionId: string): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(BOOKMARK_KEY(connectionId)) ?? '[]') as unknown
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.startsWith('/')).slice(0, 50) : []
+  } catch {
+    return []
+  }
+}
+
 interface FileManagerProps {
   sessionId: string
+  connectionId: string
   active: boolean
   connected: boolean
   notify: (message: string) => void
@@ -63,7 +77,7 @@ function sameListing(a: RemoteEntry[], b: RemoteEntry[]): boolean {
   return true
 }
 
-export function FileManager({ sessionId, active, connected, notify, onOpenTerminalHere }: FileManagerProps) {
+export function FileManager({ sessionId, connectionId, active, connected, notify, onOpenTerminalHere }: FileManagerProps) {
   const [path, setPath] = useState<string | null>(null)
   const [entries, setEntries] = useState<RemoteEntry[]>([])
   const [loading, setLoading] = useState(false)
@@ -84,6 +98,36 @@ export function FileManager({ sessionId, active, connected, notify, onOpenTermin
   const [editor, setEditor] = useState<Editor | null>(null)
   const [transfers, setTransfers] = useState<TransferProgress[]>([])
   const [dragOver, setDragOver] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [localOpen, setLocalOpen] = useState(false)
+  const [bookmarks, setBookmarks] = useState<string[]>(() => loadBookmarks(connectionId))
+  const [bookmarkMenu, setBookmarkMenu] = useState(false)
+  const saveBookmarks = (next: string[]): void => {
+    setBookmarks(next)
+    localStorage.setItem(BOOKMARK_KEY(connectionId), JSON.stringify(next))
+  }
+
+  useEffect(() => {
+    return window.easySsh.onAutoUploaded((info) => {
+      if (info.sessionId !== sessionId) return
+      const name = info.path.split('/').pop()
+      notify(info.error ? `Auto-upload of ${name} failed: ${info.error}` : `Saved ${name} to the server`)
+      if (path && info.path.startsWith(path)) void load(path, false)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, path])
+
+  async function editLocally(entry: RemoteEntry): Promise<void> {
+    setBusy(true)
+    try {
+      const editor = await window.easySsh.sftpEditLocal(sessionId, entry.path)
+      notify(`Opened ${entry.name} in ${editor}. Saving it uploads back automatically.`)
+    } catch (err) {
+      notify(errorMessage(err))
+    } finally {
+      setBusy(false)
+    }
+  }
   const rootRef = useRef<HTMLDivElement>(null)
   const loadSeq = useRef(0)
   // Directory listings cached per session: show instantly, then refresh in the background.
@@ -161,7 +205,7 @@ export function FileManager({ sessionId, active, connected, notify, onOpenTermin
         const others = current.filter((item) => item.transferId !== progress.transferId)
         return [...others, progress]
       })
-      if (progress.state !== 'running') {
+      if (progress.state === 'done' || ((progress.state === 'error' || progress.state === 'canceled') && !progress.retryable)) {
         setTimeout(() => setTransfers((current) => current.filter((item) => item.transferId !== progress.transferId)), progress.state === 'done' ? 2500 : 8000)
       }
     })
@@ -529,6 +573,36 @@ export function FileManager({ sessionId, active, connected, notify, onOpenTermin
           <button type="button" className="btn btn-ghost fm-small" disabled={!selectedEntries.length} onClick={() => void download(selectedEntries)}>
             Download
           </button>
+          <button type="button" className={`btn btn-ghost fm-small${searchOpen ? ' active' : ''}`} disabled={!path} onClick={() => setSearchOpen((v) => !v)} title="Find files or text on the server">
+            Search
+          </button>
+          <button type="button" className={`btn btn-ghost fm-small${localOpen ? ' active' : ''}`} onClick={() => setLocalOpen((v) => !v)} title="Show this computer side by side">
+            Local
+          </button>
+          <span className="fm-bookmarks">
+            <button
+              type="button"
+              className="btn btn-ghost fm-small"
+              title="Bookmarks"
+              onClick={() => setBookmarkMenu((v) => !v)}
+            >
+              {path && bookmarks.includes(path) ? '★' : '☆'} Bookmarks
+            </button>
+            {bookmarkMenu && (
+              <div className="fm-bookmark-menu" onMouseLeave={() => setBookmarkMenu(false)}>
+                {path && !bookmarks.includes(path) && (
+                  <div><button type="button" onClick={() => { saveBookmarks([...bookmarks, path].slice(-50)); setBookmarkMenu(false) }}>+ Bookmark {path}</button></div>
+                )}
+                {bookmarks.length === 0 && <div><button type="button" disabled>No bookmarks yet</button></div>}
+                {bookmarks.map((b) => (
+                  <div key={b}>
+                    <button type="button" title={b} onClick={() => { setBookmarkMenu(false); void load(b) }}>{b}</button>
+                    <button type="button" aria-label={`Remove bookmark ${b}`} onClick={() => saveBookmarks(bookmarks.filter((x) => x !== b))}>×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </span>
           <label className="fm-toggle" title="Show hidden files">
             <input type="checkbox" checked={showHidden} onChange={(event) => setShowHidden(event.target.checked)} />
             Hidden
@@ -536,6 +610,12 @@ export function FileManager({ sessionId, active, connected, notify, onOpenTermin
         </div>
       </div>
 
+      <div className="fm-body">
+      {localOpen && (
+        <Suspense fallback={null}>
+          <LocalPane sessionId={sessionId} remoteDir={path} remoteSelection={selectedEntries.map((e) => e.path)} notify={notify} onClose={() => setLocalOpen(false)} />
+        </Suspense>
+      )}
       <div className="fm-table" role="grid" aria-busy={loading} onContextMenu={(event) => onContext(event, null)} onClick={(event) => {
         if (event.target === event.currentTarget) setSelected(new Set())
       }}>
@@ -656,6 +736,23 @@ export function FileManager({ sessionId, active, connected, notify, onOpenTermin
           </>
         )}
       </div>
+      {searchOpen && path && (
+        <Suspense fallback={null}>
+          <SearchPanel
+            key={path}
+            sessionId={sessionId}
+            dir={path}
+            onClose={() => setSearchOpen(false)}
+            onOpen={(hit) => {
+              const parent = parentRemote(hit.path)
+              const name = hit.path.split('/').pop() ?? ''
+              if (hit.line !== undefined) void openEntry({ name, path: hit.path, kind: 'file', size: 0, mtime: 0, mode: 0 })
+              else void load(parent).then(() => setSelected(new Set([hit.path])))
+            }}
+          />
+        </Suspense>
+      )}
+      </div>
 
       <div className="fm-statusline">
         <span>
@@ -677,7 +774,11 @@ export function FileManager({ sessionId, active, connected, notify, onOpenTermin
                 <div className="fm-transfer-top">
                   <span>{transfer.label}</span>
                   <span>
-                    {transfer.state === 'error'
+                    {transfer.state === 'queued'
+                      ? 'Queued'
+                      : transfer.state === 'canceled'
+                      ? 'Canceled'
+                      : transfer.state === 'error'
                       ? 'Failed'
                       : transfer.state === 'done'
                         ? 'Done'
@@ -688,6 +789,26 @@ export function FileManager({ sessionId, active, connected, notify, onOpenTermin
                   <span style={{ width: `${transfer.state === 'error' ? 100 : pct}%` }} />
                 </div>
                 {transfer.error && <small>{transfer.error}</small>}
+                <div className="fm-transfer-actions">
+                  {(transfer.state === 'running' || transfer.state === 'queued') && (
+                    <button type="button" className="btn btn-ghost" onClick={() => void window.easySsh.sftpCancel(transfer.transferId)}>Cancel</button>
+                  )}
+                  {transfer.retryable && (transfer.state === 'error' || transfer.state === 'canceled') && (
+                    <>
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        onClick={() => {
+                          setTransfers((cur) => cur.filter((t) => t.transferId !== transfer.transferId))
+                          void window.easySsh.sftpRetry(transfer.transferId).then(() => { if (path) void load(path, false) }, (err) => notify(errorMessage(err)))
+                        }}
+                      >
+                        Retry (resume)
+                      </button>
+                      <button type="button" className="btn btn-ghost" onClick={() => setTransfers((cur) => cur.filter((t) => t.transferId !== transfer.transferId))}>Dismiss</button>
+                    </>
+                  )}
+                </div>
                 {transfer.filesTotal > 1 && transfer.state === 'running' && (
                   <small>
                     {transfer.filesDone} of {transfer.filesTotal} files
@@ -711,6 +832,11 @@ export function FileManager({ sessionId, active, connected, notify, onOpenTermin
           {menuTarget && menuItems.length === 1 && !isDirLike(menuTarget) && (
             <button type="button" onClick={() => { setMenu(null); void run(() => window.easySsh.sftpOpen(sessionId, menuTarget.path), `Opened ${menuTarget.name}`) }}>
               Open with system app
+            </button>
+          )}
+          {menuTarget && menuItems.length === 1 && !isDirLike(menuTarget) && (
+            <button type="button" onClick={() => { setMenu(null); void editLocally(menuTarget) }}>
+              Edit in local editor (auto-upload)
             </button>
           )}
           {menuItems.length > 0 && (

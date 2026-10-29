@@ -764,6 +764,7 @@ export default function App() {
                 <FileManager
                   key={`fm-${tab.id}`}
                   sessionId={tab.sessionId}
+                  connectionId={tab.connectionId}
                   active={tab.id === activeTabId && tab.mode === 'files'}
                   connected={tab.phase === 'connected'}
                   notify={notify}

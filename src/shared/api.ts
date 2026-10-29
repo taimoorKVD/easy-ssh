@@ -12,6 +12,15 @@ import type {
   TerminalLaunchResult
 } from './types'
 import type { RemoteEntry, TransferProgress } from './remote-fs'
+import type { SearchHit, SearchMode } from './remote-search'
+
+export interface LocalEntry {
+  name: string
+  path: string
+  kind: 'dir' | 'file'
+  size: number
+  mtime: number
+}
 
 export interface ForwardStateEvent {
   sessionId: string
@@ -73,6 +82,15 @@ export interface EasySshApi {
   sftpUpload(sessionId: string, localPaths: string[], remoteDir: string): Promise<void>
   sftpUploadPick(sessionId: string, remoteDir: string, folders: boolean): Promise<boolean>
   sftpDownload(sessionId: string, paths: string[], singleFile: boolean): Promise<boolean>
+  sftpSearch(sessionId: string, searchId: string, dir: string, mode: SearchMode, pattern: string): Promise<SearchHit[]>
+  sftpSearchCancel(searchId: string): Promise<void>
+  sftpRetry(transferId: string): Promise<void>
+  sftpCancel(transferId: string): Promise<void>
+  sftpEditLocal(sessionId: string, path: string): Promise<string>
+  sftpDownloadTo(sessionId: string, paths: string[], localDir: string): Promise<void>
+  localHome(): Promise<string>
+  localList(dir: string): Promise<{ path: string; parent: string; entries: LocalEntry[] }>
+  onAutoUploaded(callback: (info: { sessionId: string; path: string; error?: string }) => void): () => void
   pathForFile(file: File): string
   onSftpProgress(callback: (progress: TransferProgress) => void): () => void
   onMenu(callback: (action: 'new' | 'import' | 'export') => void): () => void
