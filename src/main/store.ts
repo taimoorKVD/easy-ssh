@@ -22,6 +22,7 @@ interface StoredConnection {
   group: string
   forwards?: ForwardRule[]
   jumpHostId?: string
+  keyId?: string
   createdAt: string
   updatedAt: string
 }
@@ -173,8 +174,9 @@ export class Store {
       if (normalized.authType === 'password' && !nextSecrets.password) {
         throw new Error('Enter a password. It is stored in the OS keychain, not in the connections file.')
       }
-      if (normalized.authType === 'privateKey' && !normalized.privateKeyPath) {
-        throw new Error('Choose a private key file.')
+      const keyId = normalized.authType === 'privateKey' && typeof input.keyId === 'string' && /^[0-9a-f-]{8,80}$/i.test(input.keyId) ? input.keyId : undefined
+      if (normalized.authType === 'privateKey' && !normalized.privateKeyPath && !keyId) {
+        throw new Error('Choose a private key file or a saved key.')
       }
 
       const now = new Date().toISOString()
@@ -190,6 +192,7 @@ export class Store {
         startupCommands: normalized.startupCommands,
         group: normalized.group,
         jumpHostId: this.checkJump(id, input.jumpHostId),
+        keyId,
         forwards: input.forwards === undefined ? existing?.forwards ?? [] : validateForwards(input.forwards),
         createdAt: existing?.createdAt ?? now,
         updatedAt: now

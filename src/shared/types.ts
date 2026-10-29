@@ -18,6 +18,7 @@ export interface ConnectionInput {
   group?: string
   forwards?: unknown
   jumpHostId?: string
+  keyId?: string
 }
 
 export interface ConnectionPublic {
@@ -35,6 +36,7 @@ export interface ConnectionPublic {
   group: string
   forwards: ForwardRule[]
   jumpHostId?: string
+  keyId?: string
   createdAt: string
   updatedAt: string
 }

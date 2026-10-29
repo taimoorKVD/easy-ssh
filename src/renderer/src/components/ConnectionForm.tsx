@@ -1,4 +1,5 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
+import type { KeyPublic } from '@shared/keys'
 import type { AuthType, ConnectionInput, ConnectionPublic } from '@shared/types'
 
 interface ConnectionFormProps {
@@ -28,6 +29,11 @@ export function ConnectionForm({ initial, groups, connections, saving, error, on
   const [jumpHostId, setJumpHostId] = useState(initial?.jumpHostId ?? '')
   const jumpChoices = connections.filter((c) => c.id !== initial?.id && !c.jumpHostId)
   const isBastion = Boolean(initial && connections.some((c) => c.jumpHostId === initial.id))
+  const [keyId, setKeyId] = useState(initial?.keyId ?? '')
+  const [savedKeys, setSavedKeys] = useState<KeyPublic[]>([])
+  useEffect(() => {
+    if (authType === 'privateKey') void window.easySsh.listKeys().then(setSavedKeys, () => setSavedKeys([]))
+  }, [authType])
   const [localError, setLocalError] = useState<string | null>(null)
 
   async function browseKey(): Promise<void> {
@@ -41,8 +47,8 @@ export function ConnectionForm({ initial, groups, connections, saving, error, on
       setLocalError('Enter a password. It is saved in the OS keychain, not in the connections file.')
       return
     }
-    if (authType === 'privateKey' && !privateKeyPath.trim()) {
-      setLocalError('Choose a private key file.')
+    if (authType === 'privateKey' && !privateKeyPath.trim() && !keyId) {
+      setLocalError('Choose a saved key or a private key file.')
       return
     }
     setLocalError(null)
@@ -58,6 +64,8 @@ export function ConnectionForm({ initial, groups, connections, saving, error, on
       startupCommands,
       group,
       jumpHostId: jumpHostId || undefined,
+      keyId: authType === 'privateKey' && keyId ? keyId : undefined,
+
       password: authType === 'password' && password ? password : undefined,
       passphrase: authType === 'privateKey' && passphrase ? passphrase : undefined,
       clearPassword: authType !== 'password',
@@ -158,6 +166,17 @@ export function ConnectionForm({ initial, groups, connections, saving, error, on
           ) : (
             <>
               <label className="field span-2">
+                <span>Saved key</span>
+                <select className="select" value={keyId} onChange={(event) => setKeyId(event.target.value)}>
+                  <option value="">None, use a key file below</option>
+                  {savedKeys.map((k) => (
+                    <option key={k.id} value={k.id}>{`${k.name} (${k.type}, ${k.fingerprint.slice(0, 18)}…)`}</option>
+                  ))}
+                </select>
+                <small>Manage keys from the command palette (Ctrl+K → SSH keys).</small>
+              </label>
+              {!keyId && (
+              <label className="field span-2">
                 <span>Private key</span>
                 <span className="secret-row">
                   <input
@@ -171,6 +190,8 @@ export function ConnectionForm({ initial, groups, connections, saving, error, on
                   </button>
                 </span>
               </label>
+              )}
+              {!keyId && (
               <label className="field span-2">
                 <span>Key passphrase</span>
                 <span className="secret-row">
@@ -187,6 +208,7 @@ export function ConnectionForm({ initial, groups, connections, saving, error, on
                   </button>
                 </span>
               </label>
+              )}
             </>
           )}
           <label className="field span-2">

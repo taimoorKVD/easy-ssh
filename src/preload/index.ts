@@ -5,6 +5,12 @@ import type { SnippetInput } from '../shared/snippets'
 import type { ConnectionInput, HostKeyPrompt, SessionStatus } from '../shared/types'
 
 const api = {
+  listKeys: () => ipcRenderer.invoke('keys:list'),
+  generateKey: (name: string) => ipcRenderer.invoke('keys:generate', name),
+  importKey: (name: string, passphrase: string) => ipcRenderer.invoke('keys:import', name, passphrase),
+  removeKey: (id: string) => ipcRenderer.invoke('keys:remove', id),
+  publicKey: (id: string) => ipcRenderer.invoke('keys:public', id),
+  installKey: (s: string, id: string) => ipcRenderer.invoke('keys:install', s, id),
   setForwards: (id: string, rules: unknown) => ipcRenderer.invoke('connections:setForwards', id, rules),
   listForwards: (s: string) => ipcRenderer.invoke('fwd:list', s),
   startForward: (s: string, r: string) => ipcRenderer.invoke('fwd:start', s, r),

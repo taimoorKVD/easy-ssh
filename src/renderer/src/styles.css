@@ -919,3 +919,14 @@ html, body, #root { width: 100vw; height: 100vh; overflow: hidden; }
 
 .field select.select { width: 100%; background: var(--bg-inset); border: 1px solid var(--line-strong); border-radius: 10px; padding: 9px 11px; color: var(--text); outline: none; }
 .field select.select:focus { border-color: rgba(var(--accent-rgb), 0.75); }
+
+/* Key manager */
+.keys-modal { width: min(760px, 100%); }
+.keys-new { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 14px; }
+.keys-new input { background: var(--bg-inset); border: 1px solid var(--line-strong); border-radius: 10px; padding: 8px 10px; color: var(--text); }
+.keys-list { list-style: none; padding: 0; margin: 14px 0 0; display: flex; flex-direction: column; gap: 8px; }
+.keys-list li { padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg-inset); display: flex; flex-direction: column; gap: 8px; }
+.key-main { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.key-main code { margin-left: auto; font-family: var(--mono); font-size: 11.5px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.key-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.key-actions .btn { padding: 5px 10px; font-size: 12px; }

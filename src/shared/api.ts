@@ -1,3 +1,4 @@
+import type { KeyPublic } from './keys'
 import type { ForwardRule } from './forwards'
 import type { Snippet, SnippetInput } from './snippets'
 import type {
@@ -19,6 +20,12 @@ export interface ForwardStateEvent {
 }
 
 export interface EasySshApi {
+  listKeys(): Promise<KeyPublic[]>
+  generateKey(name: string): Promise<KeyPublic>
+  importKey(name: string, passphrase: string): Promise<KeyPublic | null>
+  removeKey(id: string): Promise<void>
+  publicKey(id: string): Promise<string>
+  installKey(sessionId: string, keyId: string): Promise<'added' | 'present'>
   setForwards(connectionId: string, rules: ForwardRule[]): Promise<ConnectionPublic>
   listForwards(sessionId: string): Promise<string[]>
   startForward(sessionId: string, ruleId: string): Promise<void>

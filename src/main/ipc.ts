@@ -13,6 +13,8 @@ import { validateSnippet } from '../shared/snippets'
 import { ID_RE, isExecutableName, isSafeExternalUrl } from './security'
 import { STATS_COMMAND } from '../shared/stats'
 import { ForwardManager } from './forward-manager'
+import { authorizedKeysCommand } from '../shared/keys'
+import type { Client } from 'ssh2'
 import type { IpcMainEvent, IpcMainInvokeEvent } from 'electron'
 
 /** Only our own bundled page may call privileged IPC. */
@@ -34,6 +36,34 @@ function handle(channel: string, fn: Handler): void {
 function on(channel: string, fn: Listener): void {
   ipcMain.on(channel, (event, ...args) => {
     if (trustedSender(event)) fn(event, ...args)
+  })
+}
+
+/** Run one fixed command on an exec channel, with a timeout and output cap. */
+export function runExec(client: Client, command: string, timeoutMs = 10_000, cap = 65_536): Promise<{ code: number | null; out: string }> {
+  return new Promise((resolve, reject) => {
+    let out = ''
+    let settled = false
+    const done = (fn: () => void): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      fn()
+    }
+    const timer = setTimeout(() => done(() => reject(new Error('The server took too long to answer.'))), timeoutMs)
+    client.exec(command, (error, stream) => {
+      if (error) return done(() => reject(error))
+      const onChunk = (chunk: Buffer): void => {
+        out += chunk.toString('utf8')
+        if (out.length > cap) {
+          stream.close()
+          done(() => resolve({ code: null, out: out.slice(0, cap) }))
+        }
+      }
+      stream.on('data', onChunk)
+      stream.stderr.on('data', onChunk)
+      stream.on('close', (code: number | null) => done(() => resolve({ code, out })))
+    })
   })
 }
 
@@ -74,6 +104,35 @@ export function registerIpc(
 ): void {
   const sid = (value: unknown): string => asId(value, 'session')
   const forwards = new ForwardManager((state) => send('fwd:state', state))
+  const keys = sessions.keys
+  handle('keys:list', () => keys.list())
+  handle('keys:generate', (_e, name: unknown) => keys.generate(name))
+  handle('keys:import', async (_e, name: unknown, passphrase: unknown) => {
+    const win = getWindow()
+    if (!win) return null
+    const result = await dialog.showOpenDialog(win, {
+      title: 'Import a private key',
+      defaultPath: join(homedir(), '.ssh'),
+      properties: ['openFile', 'dontAddToRecent']
+    })
+    if (result.canceled || !result.filePaths[0]) return null
+    return keys.importFile(result.filePaths[0], name, passphrase)
+  })
+  handle('keys:remove', (_e, id: unknown) => {
+    const keyId = asId(id, 'key')
+    if (store.list().some((c) => c.keyId === keyId)) throw new Error('A connection still uses this key. Switch it to another key first.')
+    return keys.remove(keyId)
+  })
+  handle('keys:public', (_e, id: unknown) => keys.publicKey(asId(id, 'key')))
+  handle('keys:install', async (_e, s: unknown, id: unknown) => {
+    const client = sessions.client(sid(s))
+    if (!client) throw new Error('Connect to the server first.')
+    const command = authorizedKeysCommand(await keys.publicKey(asId(id, 'key')))
+    const { code, out } = await runExec(client, command)
+    if (out.includes('EASYSSH_KEY_PRESENT')) return 'present'
+    if (code === 0 && out.includes('EASYSSH_KEY_ADDED')) return 'added'
+    throw new Error(`Could not add the key: ${out.trim().slice(0, 200) || `exit ${code}`}`)
+  })
   handle('connections:setForwards', (_e, id: unknown, rules: unknown) => store.setForwards(asId(id), rules))
   handle('fwd:list', (_e, s: unknown) => forwards.list(sid(s)))
   handle('fwd:start', async (_e, s: unknown, ruleId: unknown) => {

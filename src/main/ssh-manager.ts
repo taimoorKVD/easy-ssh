@@ -5,6 +5,7 @@ import { Client, type ClientChannel } from 'ssh2'
 import { buildStartupScript } from '../shared/shell'
 import type { HostKeyPrompt, SessionErrorCode, SessionStatus } from '../shared/types'
 import { Store } from './store'
+import { KeyStore } from './key-store'
 
 export interface SessionEvents {
   data(sessionId: string, data: string): void
@@ -22,6 +23,8 @@ interface PendingHostKey {
 interface SecretBundle {
   password?: string
   passphrase?: string
+  /** Decrypted managed key (from keys.enc), used instead of a key file. */
+  privateKey?: Buffer
 }
 
 interface HopRecord {
@@ -45,6 +48,7 @@ function authFor(record: HopRecord, secret: SecretBundle): { error: string; code
     if (!secret.password) return { error: 'No password is saved for this connection.', code: 'auth' }
     return {}
   }
+  if (secret.privateKey) return { privateKey: secret.privateKey }
   if (!record.privateKeyPath) return { error: 'Choose a private key file for this connection.', code: 'key' }
   try {
     return { privateKey: readFileSync(record.privateKeyPath) }
@@ -373,6 +377,7 @@ class SshSession {
 }
 
 export class SessionManager {
+  readonly keys = new KeyStore()
   private sessions = new Map<string, SshSession>()
   private pendingHost = new Map<string, PendingHostKey>()
 
@@ -381,16 +386,26 @@ export class SessionManager {
     private readonly events: SessionEvents
   ) {}
 
+  private async secretsFor(record: { id: string; authType: string; keyId?: string }): Promise<SecretBundle> {
+    const secret: SecretBundle = await this.store.getSecrets(record.id)
+    if (record.authType === 'privateKey' && record.keyId) {
+      const material = await this.keys.material(record.keyId)
+      secret.privateKey = material.privateKey
+      secret.passphrase = material.passphrase
+    }
+    return secret
+  }
+
   async connect(connectionId: string): Promise<string> {
     const record = this.store.get(connectionId)
     if (!record) throw new Error('That connection no longer exists.')
-    const secret = await this.store.getSecrets(connectionId)
+    const secret = await this.secretsFor(record)
     let jump: JumpHop | null = null
     if (record.jumpHostId) {
       const hop = this.store.get(record.jumpHostId)
       if (!hop) throw new Error('The jump host for this connection was deleted. Edit the connection and pick another.')
       if (hop.id === record.id || hop.jumpHostId) throw new Error('A jump host cannot itself use a jump host.')
-      jump = { record: hop, secret: await this.store.getSecrets(hop.id) }
+      jump = { record: hop, secret: await this.secretsFor(hop) }
     }
     const sessionId = randomUUID()
     const session = new SshSession(

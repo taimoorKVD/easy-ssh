@@ -19,6 +19,7 @@ const loadFileManager = () => import('./components/FileManager').then((m) => ({ 
 const FileManager = lazy(loadFileManager)
 const CommandPalette = lazy(() => import('./components/CommandPalette'))
 const ForwardsPanel = lazy(() => import('./components/ForwardsPanel'))
+const KeyManager = lazy(() => import('./components/KeyManager'))
 // Warm the File Manager chunk once the app is idle so the first switch is instant.
 setTimeout(() => void loadFileManager(), 1500)
 
@@ -481,6 +482,7 @@ export default function App() {
   }, [tabs, restoreEnabled])
   const [themeOpen, setThemeOpen] = useState(false)
   const [forwardsOpen, setForwardsOpen] = useState(false)
+  const [keysOpen, setKeysOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('easy-ssh.sidebarCollapsed') === '1')
   const toggleSidebar = useCallback((): void => {
     setSidebarCollapsed((v) => {
@@ -882,12 +884,23 @@ export default function App() {
                       : [])
                   ]
                 : []),
+              { id: 'keys', label: 'SSH keys…', run: () => setKeysOpen(true) },
               { id: 'sidebar', label: sidebarCollapsed ? 'Expand server sidebar' : 'Collapse server sidebar', hint: 'Ctrl+B', run: toggleSidebar },
               { id: 'theme', label: 'Change theme…', hint: 'Appearance', run: () => setThemeOpen(true) },
               { id: 'toggle-stats', label: statsEnabled ? 'Hide server stats' : 'Show server stats (CPU, RAM, disk, uptime)', run: toggleStats },
               { id: 'toggle-restore', label: restoreEnabled ? 'Turn off restoring tabs on launch' : 'Turn on restoring tabs on launch', run: toggleRestore },
               { id: 'new-conn', label: 'New connection…', run: () => { setFormError(null); setForm({}) } }
             ]}
+          />
+        </Suspense>
+      )}
+      {keysOpen && (
+        <Suspense fallback={null}>
+          <KeyManager
+            sessionId={activeTab?.phase === 'connected' ? activeTab.sessionId : null}
+            serverLabel={activeConnection ? `${activeConnection.username}@${activeConnection.host}` : null}
+            notify={notify}
+            onClose={() => setKeysOpen(false)}
           />
         </Suspense>
       )}
