@@ -772,3 +772,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 .palette-form textarea, .palette-form select { font-family: var(--mono); }
 .palette-preview { display: block; background: var(--bg-inset); padding: 8px 10px; border-radius: 8px; white-space: pre-wrap; word-break: break-all; color: var(--accent); }
 .palette-error { padding: 0 14px 10px; }
+
+/* Server stats bar */
+.stats-bar { display: inline-flex; gap: 10px; margin-left: 12px; font-variant-numeric: tabular-nums; opacity: 0.85; }
+.stats-bar.muted { opacity: 0.5; }
+.stats-bar .warm { color: #e5b567; }
+.stats-bar .hot { color: #f06d6d; font-weight: 600; }

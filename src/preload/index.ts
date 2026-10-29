@@ -6,6 +6,7 @@ import type { ConnectionInput, HostKeyPrompt, SessionStatus } from '../shared/ty
 
 const api = {
   getMeta: () => ipcRenderer.invoke('app:meta'),
+  serverStats: (sessionId: string) => ipcRenderer.invoke('ssh:stats', sessionId),
   listSnippets: () => ipcRenderer.invoke('snippets:list'),
   saveSnippet: (input: SnippetInput) => ipcRenderer.invoke('snippets:save', input),
   deleteSnippet: (id: string) => ipcRenderer.invoke('snippets:delete', id),

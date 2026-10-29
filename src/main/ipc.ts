@@ -11,6 +11,7 @@ import { Store, encryptionStatus } from './store'
 import { SnippetStore } from './snippets'
 import { validateSnippet } from '../shared/snippets'
 import { ID_RE, isExecutableName, isSafeExternalUrl } from './security'
+import { STATS_COMMAND } from '../shared/stats'
 import type { IpcMainEvent, IpcMainInvokeEvent } from 'electron'
 
 /** Only our own bundled page may call privileged IPC. */
@@ -213,6 +214,44 @@ export function registerIpc(
   })
 
   handle('ssh:connect', (_event, connectionId: unknown) => sessions.connect(asId(connectionId, 'connection')))
+
+  // Server stats: runs a fixed read-only probe on a separate exec channel of the same connection.
+  const statsBusy = new Set<string>()
+  handle('ssh:stats', (_event, rawId: unknown) => {
+    const sessionId = asId(rawId, 'session')
+    const client = sessions.client(sessionId)
+    if (!client || statsBusy.has(sessionId)) return null
+    statsBusy.add(sessionId)
+    return new Promise<string | null>((resolve) => {
+      let out = ''
+      let done = false
+      const finish = (value: string | null): void => {
+        if (done) return
+        done = true
+        clearTimeout(timer)
+        statsBusy.delete(sessionId)
+        resolve(value)
+      }
+      const timer = setTimeout(() => finish(null), 4000)
+      try {
+        client.exec(STATS_COMMAND, (error, stream) => {
+          if (error) return finish(null)
+          stream.on('data', (chunk: Buffer) => {
+            out += chunk.toString('utf8')
+            if (out.length > 16_384) {
+              stream.close()
+              finish(null)
+            }
+          })
+          stream.stderr.resume()
+          stream.on('close', () => finish(out))
+          stream.on('error', () => finish(null))
+        })
+      } catch {
+        finish(null)
+      }
+    })
+  })
 
   handle('ssh:disconnect', (_event, sessionId: unknown) => {
     sftp.release(asId(sessionId, 'session'))

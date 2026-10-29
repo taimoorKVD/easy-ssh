@@ -9,6 +9,8 @@ import { shSingleQuote } from '@shared/shell'
 import { errorMessage } from './lib/errors'
 import { backoffDelay, parseRestoreState, serializeRestoreState, shouldAutoReconnect } from '@shared/reconnect'
 
+const StatsBar = lazy(() => import('./components/StatsBar'))
+const STATS_KEY = 'easy-ssh.statsEnabled'
 const RESTORE_KEY = 'easy-ssh.restoreTabs.v1'
 const RESTORE_ENABLED_KEY = 'easy-ssh.restoreEnabled'
 
@@ -458,6 +460,13 @@ export default function App() {
     if (restoreEnabled) localStorage.setItem(RESTORE_KEY, serializeRestoreState(tabs))
     else localStorage.removeItem(RESTORE_KEY)
   }, [tabs, restoreEnabled])
+  const [statsEnabled, setStatsEnabled] = useState(() => localStorage.getItem(STATS_KEY) !== '0')
+  const toggleStats = (): void => {
+    setStatsEnabled((on) => {
+      localStorage.setItem(STATS_KEY, on ? '0' : '1')
+      return !on
+    })
+  }
   const toggleRestore = (): void => {
     setRestoreEnabled((on) => {
       localStorage.setItem(RESTORE_ENABLED_KEY, on ? '0' : '1')
@@ -667,6 +676,11 @@ export default function App() {
                 ? `${activeConnection.username}@${activeConnection.host}:${activeConnection.port}`
                 : 'No session'}
               {activeTab?.message && activeTab.phase !== 'connecting' ? ` · ${activeTab.message}` : ''}
+              {statsEnabled && activeTab?.phase === 'connected' && (
+                <Suspense fallback={null}>
+                  <StatsBar sessionId={activeTab.sessionId} />
+                </Suspense>
+              )}
             </span>
             <span className="status-actions">
               {activeTab && activeTab.phase !== 'connecting' && (
@@ -750,6 +764,7 @@ export default function App() {
                   ]
                 : []),
               ...tabs.filter((t) => t.id !== activeTab?.id).map((t) => ({ id: `tab-${t.id}`, label: `Go to tab: ${t.title}`, run: () => setActiveTabId(t.id) })),
+              { id: 'toggle-stats', label: statsEnabled ? 'Hide server stats' : 'Show server stats (CPU, RAM, disk, uptime)', run: toggleStats },
               { id: 'toggle-restore', label: restoreEnabled ? 'Turn off restoring tabs on launch' : 'Turn on restoring tabs on launch', run: toggleRestore },
               { id: 'new-conn', label: 'New connection…', run: () => { setFormError(null); setForm({}) } }
             ]}

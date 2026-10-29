@@ -15,6 +15,7 @@ export interface EasySshApi {
   listSnippets(): Promise<Snippet[]>
   saveSnippet(input: SnippetInput): Promise<Snippet>
   deleteSnippet(id: string): Promise<void>
+  serverStats(sessionId: string): Promise<string | null>
   getMeta(): Promise<AppMeta>
   listConnections(): Promise<ConnectionPublic[]>
   saveConnection(input: ConnectionInput): Promise<ConnectionPublic>
