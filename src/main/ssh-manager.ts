@@ -178,6 +178,15 @@ class SshSession {
     this.finish('disconnected', 'Disconnected')
   }
 
+  /** The live SSH client, available once the shell is open. Used for SFTP over the same connection. */
+  openClient(): Client | null {
+    return this.phase === 'open' ? this.client : null
+  }
+
+  isClosed(): boolean {
+    return this.phase === 'closed'
+  }
+
   private openShell(client: Client): void {
     if (this.phase === 'closed') return
     try {
@@ -286,6 +295,10 @@ export class SessionManager {
     this.sessions.set(sessionId, session)
     session.start()
     return sessionId
+  }
+
+  client(sessionId: string): Client | null {
+    return this.sessions.get(sessionId)?.openClient() ?? null
   }
 
   write(sessionId: string, data: string): void {

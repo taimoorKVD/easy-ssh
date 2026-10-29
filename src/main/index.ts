@@ -5,6 +5,7 @@ import type { SessionStatus } from '../shared/types'
 import { registerIpc } from './ipc'
 import { recordSmokeData, recordSmokeStatus, runSmoke } from './smoke'
 import { SessionManager } from './ssh-manager'
+import { SftpManager } from './sftp-manager'
 import { Store } from './store'
 
 if (process.env.EASY_SSH_SMOKE_DATA) {
@@ -181,7 +182,8 @@ if (gotLock) {
       return
     }
 
-    registerIpc(() => mainWindow, store, sessions)
+    const sftp = new SftpManager(sessions, (progress) => send('sftp:progress', progress))
+    registerIpc(() => mainWindow, store, sessions, sftp)
     installMenu()
     mainWindow = createWindow()
     app.on('before-quit', () => sessions.disconnectAll())

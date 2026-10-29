@@ -1,4 +1,5 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
+import type { TransferProgress } from '../shared/remote-fs'
 import type { EasySshApi } from '../shared/api'
 import type { ConnectionInput, HostKeyPrompt, SessionStatus } from '../shared/types'
 
@@ -39,6 +40,25 @@ const api = {
     const listener = (_event: IpcRendererEvent, prompt: HostKeyPrompt) => callback(prompt)
     ipcRenderer.on('ssh:hostkey', listener)
     return () => ipcRenderer.removeListener('ssh:hostkey', listener)
+  },
+  sftpHome: (s: string) => ipcRenderer.invoke('sftp:home', s),
+  sftpList: (s: string, p: string) => ipcRenderer.invoke('sftp:list', s, p),
+  sftpMkdir: (s: string, p: string) => ipcRenderer.invoke('sftp:mkdir', s, p),
+  sftpCreateFile: (s: string, p: string) => ipcRenderer.invoke('sftp:createFile', s, p),
+  sftpRename: (s: string, a: string, b: string) => ipcRenderer.invoke('sftp:rename', s, a, b),
+  sftpRemove: (s: string, p: string[]) => ipcRenderer.invoke('sftp:remove', s, p),
+  sftpChmod: (s: string, p: string, mode: number) => ipcRenderer.invoke('sftp:chmod', s, p, mode),
+  sftpReadText: (s: string, p: string) => ipcRenderer.invoke('sftp:readText', s, p),
+  sftpWriteText: (s: string, p: string, c: string) => ipcRenderer.invoke('sftp:writeText', s, p, c),
+  sftpOpen: (s: string, p: string) => ipcRenderer.invoke('sftp:open', s, p),
+  sftpUpload: (s: string, local: string[], dir: string) => ipcRenderer.invoke('sftp:upload', s, local, dir),
+  sftpUploadPick: (s: string, dir: string, folders: boolean) => ipcRenderer.invoke('sftp:uploadPick', s, dir, folders),
+  sftpDownload: (s: string, p: string[], single: boolean) => ipcRenderer.invoke('sftp:download', s, p, single),
+  pathForFile: (file: File) => webUtils.getPathForFile(file),
+  onSftpProgress: (callback) => {
+    const listener = (_event: IpcRendererEvent, progress: TransferProgress) => callback(progress)
+    ipcRenderer.on('sftp:progress', listener)
+    return () => ipcRenderer.removeListener('sftp:progress', listener)
   },
   onMenu: (callback) => {
     const listener = (_event: IpcRendererEvent, action: 'new' | 'import' | 'export') => callback(action)

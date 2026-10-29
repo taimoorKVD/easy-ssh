@@ -5,6 +5,8 @@ import { IconClose, LogoMark } from './components/Icons'
 import { ConfirmDialog, HostKeyDialog, ProblemSheet, Toast } from './components/Overlays'
 import { Sidebar } from './components/Sidebar'
 import { TerminalView } from './components/TerminalView'
+import { FileManager } from './components/FileManager'
+import { shSingleQuote } from '@shared/shell'
 import { errorMessage } from './lib/errors'
 
 interface Tab {
@@ -15,6 +17,8 @@ interface Tab {
   phase: SessionPhase
   message?: string
   code?: SessionErrorCode
+  mode: 'terminal' | 'files'
+  filesOpened: boolean
 }
 
 const MAX_TABS = 16
@@ -135,11 +139,15 @@ export default function App() {
         title: connection.name,
         phase: pending?.phase ?? 'connecting',
         message: pending?.message,
-        code: pending?.code
+        code: pending?.code,
+        mode: 'terminal',
+        filesOpened: false
       }
       const exists = current.some((tab) => tab.id === tabId)
       if (!exists) return [...current, nextTab]
-      return current.map((tab) => (tab.id === tabId ? { ...tab, ...nextTab, title: connection.name } : tab))
+      return current.map((tab) =>
+        tab.id === tabId ? { ...tab, ...nextTab, title: connection.name, mode: tab.mode, filesOpened: tab.filesOpened } : tab
+      )
     })
     setActiveTabId(tabId)
   }, [])
@@ -361,6 +369,22 @@ export default function App() {
     await reconnect({ ...tab, sessionId: tabsRef.current.find((item) => item.id === tab.id)?.sessionId ?? tab.sessionId })
   }
 
+  const setMode = useCallback((tabId: string, mode: Tab['mode']) => {
+    setTabs((current) =>
+      current.map((tab) => (tab.id === tabId ? { ...tab, mode, filesOpened: tab.filesOpened || mode === 'files' } : tab))
+    )
+  }, [])
+
+  const openTerminalHere = useCallback(
+    (tabId: string, path: string) => {
+      const tab = tabsRef.current.find((item) => item.id === tabId)
+      if (!tab) return
+      setMode(tabId, 'terminal')
+      window.easySsh.write(tab.sessionId, `cd ${shSingleQuote(path)}\r`)
+    },
+    [setMode]
+  )
+
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? null
   const activeConnection = connections.find((connection) => connection.id === activeTab?.connectionId)
   const phases: Record<string, SessionPhase | undefined> = {}
@@ -459,6 +483,40 @@ export default function App() {
               )}
             </div>
           )}
+          {activeTab && (
+            <div className="session-bar">
+              <div className="session-title">
+                <span className={`dot ${activeTab.phase}`} />
+                <strong>{activeTab.title}</strong>
+                {activeConnection && <span>{`${activeConnection.username}@${activeConnection.host}`}</span>}
+              </div>
+              <div className="mode-toggle" role="tablist" aria-label="Session mode">
+                <span className={`mode-thumb${activeTab.mode === 'files' ? ' right' : ''}`} aria-hidden="true" />
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab.mode === 'terminal'}
+                  onClick={() => setMode(activeTab.id, 'terminal')}
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M5 8l4 4-4 4M11 16h8" />
+                  </svg>
+                  Terminal
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab.mode === 'files'}
+                  onClick={() => setMode(activeTab.id, 'files')}
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" />
+                  </svg>
+                  File Manager
+                </button>
+              </div>
+            </div>
+          )}
           <div className="terminal-stage">
             {tabs.length === 0 && (
               <div className="welcome">
@@ -482,8 +540,25 @@ export default function App() {
               </div>
             )}
             {tabs.map((tab) => (
-              <TerminalView key={tab.id} sessionId={tab.sessionId} active={tab.id === activeTabId} register={registerWriter} />
+              <TerminalView
+                key={tab.id}
+                sessionId={tab.sessionId}
+                active={tab.id === activeTabId && tab.mode === 'terminal'}
+                register={registerWriter}
+              />
             ))}
+            {tabs
+              .filter((tab) => tab.filesOpened)
+              .map((tab) => (
+                <FileManager
+                  key={`fm-${tab.id}`}
+                  sessionId={tab.sessionId}
+                  active={tab.id === activeTabId && tab.mode === 'files'}
+                  connected={tab.phase === 'connected'}
+                  notify={notify}
+                  onOpenTerminalHere={(path) => openTerminalHere(tab.id, path)}
+                />
+              ))}
             {activeTab?.phase === 'connecting' && (
               <div className="connecting-banner">Connecting to {activeConnection ? `${activeConnection.username}@${activeConnection.host}` : activeTab.title}…</div>
             )}
