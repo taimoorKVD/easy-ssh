@@ -11,6 +11,7 @@ import { backoffDelay, parseRestoreState, serializeRestoreState, shouldAutoRecon
 
 const ThemeGallery = lazy(() => import('./components/ThemeGallery'))
 const StatsBar = lazy(() => import('./components/StatsBar'))
+const CTRLK_KEY = 'easy-ssh.ctrlKToShell'
 const STATS_KEY = 'easy-ssh.statsEnabled'
 const RESTORE_KEY = 'easy-ssh.restoreTabs.v1'
 const RESTORE_ENABLED_KEY = 'easy-ssh.restoreEnabled'
@@ -289,13 +290,25 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // When on, Ctrl+K inside a focused terminal goes to the shell (e.g. readline kill-line); use Ctrl+Shift+P there.
+  const [ctrlKToShell, setCtrlKToShell] = useState(() => localStorage.getItem(CTRLK_KEY) === '1')
+  const ctrlKRef = useRef(ctrlKToShell)
+  ctrlKRef.current = ctrlKToShell
+  const toggleCtrlK = (): void => {
+    setCtrlKToShell((on) => {
+      localStorage.setItem(CTRLK_KEY, on ? '0' : '1')
+      return !on
+    })
+  }
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
       const meta = event.metaKey || event.ctrlKey
       const target = event.target instanceof HTMLElement ? event.target : null
       const typing = Boolean(target?.closest('input, textarea, [contenteditable="true"]'))
       const inTerminal = Boolean(target?.closest('.xterm'))
-      if (meta && (event.key.toLowerCase() === 'k' || (event.shiftKey && event.key.toLowerCase() === 'p'))) {
+      const kToShell = event.key.toLowerCase() === 'k' && !event.shiftKey && inTerminal && ctrlKRef.current
+      if (meta && !kToShell && (event.key.toLowerCase() === 'k' || (event.shiftKey && event.key.toLowerCase() === 'p'))) {
         event.preventDefault()
         event.stopPropagation()
         setPaletteOpen((open) => !open)
@@ -899,6 +912,12 @@ export default function App() {
                   ]
                 : []),
               { id: 'keys', label: 'SSH keys…', run: () => setKeysOpen(true) },
+              {
+                id: 'ctrlk',
+                label: ctrlKToShell ? 'Ctrl+K: open palette everywhere' : 'Ctrl+K: send to terminal when focused (use Ctrl+Shift+P)',
+                hint: 'Shortcut',
+                run: toggleCtrlK
+              },
               { id: 'backup-create', label: 'Create encrypted backup…', run: () => setBackupMode('create') },
               { id: 'backup-restore', label: 'Restore encrypted backup…', run: () => setBackupMode('restore') },
               { id: 'import-ssh-config', label: 'Import from ~/.ssh/config', run: () => void importConnections(true) },
