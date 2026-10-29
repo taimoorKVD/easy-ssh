@@ -8,6 +8,7 @@ interface LaunchTarget {
   host: string
   defaultDirectory: string
   startupCommands: string[]
+  tmuxSession?: string
 }
 
 function commandExists(name: string): boolean {
@@ -36,7 +37,8 @@ export function openSystemTerminal(target: LaunchTarget): TerminalLaunchResult {
     username: target.username,
     host: target.host,
     defaultDirectory: target.defaultDirectory,
-    startupCommands: target.startupCommands
+    startupCommands: target.startupCommands,
+    tmuxSession: target.tmuxSession
   })
   const cmdline = formatLocalCommand(args)
 

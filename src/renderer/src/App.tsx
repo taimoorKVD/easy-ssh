@@ -536,7 +536,7 @@ export default function App() {
       return
     }
     try {
-      const sessionId = await window.easySsh.connect(tab.connectionId)
+      const sessionId = await window.easySsh.connect(tab.connectionId, true)
       setTabs((cur) => cur.map((t) => (t.id === tabId ? { ...t, mode: 'terminal', splitDir: dir, panes: [...(t.panes ?? []), sessionId] } : t)))
     } catch (err) {
       notify(errorMessage(err))

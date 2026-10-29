@@ -25,6 +25,7 @@ interface StoredConnection {
   keyId?: string
   tags?: string[]
   favorite?: boolean
+  tmuxSession?: string
   createdAt: string
   updatedAt: string
 }
@@ -196,6 +197,7 @@ export class Store {
         jumpHostId: this.checkJump(id, input.jumpHostId),
         keyId,
         tags: input.tags === undefined ? existing?.tags ?? [] : normalizeTags(input.tags),
+        tmuxSession: normalizeTmux(input.tmuxSession),
         favorite: input.favorite === undefined ? existing?.favorite ?? false : input.favorite === true,
         forwards: input.forwards === undefined ? existing?.forwards ?? [] : validateForwards(input.forwards),
         createdAt: existing?.createdAt ?? now,
@@ -297,7 +299,8 @@ export class Store {
         startupCommands: connection.startupCommands.length ? connection.startupCommands : undefined,
         group: connection.group || undefined,
         tags: connection.tags?.length ? connection.tags : undefined,
-        favorite: connection.favorite || undefined
+        favorite: connection.favorite || undefined,
+        tmuxSession: connection.tmuxSession || undefined
       }))
     }
   }
@@ -552,6 +555,7 @@ function tryNormalizeImport(entry: unknown): Omit<StoredConnection, 'id' | 'crea
       startupCommands: normalized.startupCommands,
       group: normalized.group,
       tags: normalizeTags(entry.tags),
+      tmuxSession: normalizeTmux(entry.tmuxSession),
       favorite: entry.favorite === true
     }
   } catch {
@@ -569,4 +573,12 @@ export function normalizeTags(raw: unknown): string[] {
     if (out.length >= 10) break
   }
   return out
+}
+
+function normalizeTmux(raw: unknown): string | undefined {
+  if (raw === undefined || raw === null || raw === '') return undefined
+  if (typeof raw !== 'string' || !/^[A-Za-z0-9_.-]{1,40}$/.test(raw.trim())) {
+    throw new Error('tmux session names may use letters, numbers, dot, dash and underscore (up to 40).')
+  }
+  return raw.trim()
 }

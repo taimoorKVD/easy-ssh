@@ -21,6 +21,7 @@ export interface ConnectionInput {
   keyId?: string
   tags?: string[]
   favorite?: boolean
+  tmuxSession?: string
 }
 
 export interface ConnectionPublic {
@@ -41,6 +42,7 @@ export interface ConnectionPublic {
   keyId?: string
   tags: string[]
   favorite: boolean
+  tmuxSession?: string
   createdAt: string
   updatedAt: string
 }

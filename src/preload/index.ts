@@ -35,7 +35,7 @@ const api = {
   exportConnections: () => ipcRenderer.invoke('connections:export'),
   importConnections: () => ipcRenderer.invoke('connections:import'),
   selectPrivateKey: () => ipcRenderer.invoke('dialog:privateKey'),
-  connect: (connectionId: string) => ipcRenderer.invoke('ssh:connect', connectionId),
+  connect: (connectionId: string, plain?: boolean) => ipcRenderer.invoke('ssh:connect', connectionId, plain === true),
   disconnect: (sessionId: string) => ipcRenderer.invoke('ssh:disconnect', sessionId),
   write: (sessionId: string, data: string) => ipcRenderer.send('ssh:write', sessionId, data),
   resize: (sessionId: string, cols: number, rows: number) => ipcRenderer.send('ssh:resize', sessionId, cols, rows),

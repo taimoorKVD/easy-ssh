@@ -6,7 +6,8 @@ import {
   formatLocalCommand,
   shSingleQuote,
   splitStartupCommands,
-  sshArgv
+  sshArgv,
+  tmuxCommand
 } from '../src/shared/shell.ts'
 
 describe('shell helpers', () => {
@@ -54,4 +55,11 @@ describe('shell helpers', () => {
   it('splits startup command lines', () => {
     assert.deepEqual(splitStartupCommands(' echo a \n\n pwd '), ['echo a', 'pwd'])
   })
+})
+
+it('tmux attach line is validated and quoted', () => {
+  assert.equal(tmuxCommand("x'; rm -rf /"), null)
+  assert.equal(tmuxCommand(''), null)
+  assert.ok(tmuxCommand('main.1')!.includes("tmux new-session -A -s 'main.1'"))
+  assert.ok(buildStartupScript('', [], 'dev').endsWith("tmux is not installed on this server\"\r"))
 })

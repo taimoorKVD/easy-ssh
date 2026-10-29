@@ -54,7 +54,8 @@ export interface EasySshApi {
   exportConnections(): Promise<ExportResult>
   importConnections(): Promise<ImportResult>
   selectPrivateKey(): Promise<string | null>
-  connect(connectionId: string): Promise<string>
+  /** plain skips the tmux attach (used for split panes). */
+  connect(connectionId: string, plain?: boolean): Promise<string>
   disconnect(sessionId: string): Promise<void>
   write(sessionId: string, data: string): void
   resize(sessionId: string, cols: number, rows: number): void

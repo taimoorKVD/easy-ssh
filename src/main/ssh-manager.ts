@@ -118,6 +118,7 @@ class SshSession {
       privateKeyPath: string
       defaultDirectory: string
       startupCommands: string[]
+      tmuxSession?: string
     },
     private readonly secret: SecretBundle,
     private readonly events: SessionEvents,
@@ -326,7 +327,7 @@ class SshSession {
     if (this.startupSent || !this.stream || this.phase === 'closed') return
     this.startupSent = true
     this.startupTimer = null
-    const script = buildStartupScript(this.record.defaultDirectory, this.record.startupCommands)
+    const script = buildStartupScript(this.record.defaultDirectory, this.record.startupCommands, this.record.tmuxSession)
     if (script) this.stream.write(script)
     if (this.pendingInput) {
       this.stream.write(this.pendingInput)
@@ -396,9 +397,10 @@ export class SessionManager {
     return secret
   }
 
-  async connect(connectionId: string): Promise<string> {
-    const record = this.store.get(connectionId)
-    if (!record) throw new Error('That connection no longer exists.')
+  async connect(connectionId: string, plain = false): Promise<string> {
+    const saved = this.store.get(connectionId)
+    if (!saved) throw new Error('That connection no longer exists.')
+    const record = plain ? { ...saved, tmuxSession: undefined } : saved
     const secret = await this.secretsFor(record)
     let jump: JumpHop | null = null
     if (record.jumpHostId) {

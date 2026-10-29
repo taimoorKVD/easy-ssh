@@ -385,7 +385,7 @@ export function registerIpc(
     return result.filePaths[0]
   })
 
-  handle('ssh:connect', (_event, connectionId: unknown) => sessions.connect(asId(connectionId, 'connection')))
+  handle('ssh:connect', (_event, connectionId: unknown, plain: unknown) => sessions.connect(asId(connectionId, 'connection'), plain === true))
 
   // Server stats: runs a fixed read-only probe on a separate exec channel of the same connection.
   const statsBusy = new Set<string>()

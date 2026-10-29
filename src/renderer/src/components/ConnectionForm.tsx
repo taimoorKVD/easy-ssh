@@ -27,6 +27,7 @@ export function ConnectionForm({ initial, groups, connections, saving, error, on
   const [startupCommands, setStartupCommands] = useState(initial?.startupCommands.join('\n') ?? '')
   const [group, setGroup] = useState(initial?.group ?? '')
   const [tags, setTags] = useState((initial?.tags ?? []).join(', '))
+  const [tmuxSession, setTmuxSession] = useState(initial?.tmuxSession ?? '')
   const [jumpHostId, setJumpHostId] = useState(initial?.jumpHostId ?? '')
   const jumpChoices = connections.filter((c) => c.id !== initial?.id && !c.jumpHostId)
   const isBastion = Boolean(initial && connections.some((c) => c.jumpHostId === initial.id))
@@ -65,6 +66,7 @@ export function ConnectionForm({ initial, groups, connections, saving, error, on
       startupCommands,
       group,
       tags: tags.split(/[\s,]+/).filter(Boolean),
+      tmuxSession: tmuxSession.trim() || undefined,
       jumpHostId: jumpHostId || undefined,
       keyId: authType === 'privateKey' && keyId ? keyId : undefined,
 
@@ -227,6 +229,19 @@ export function ConnectionForm({ initial, groups, connections, saving, error, on
               spellCheck={false}
             />
             <small>easy-ssh runs cd here after login, then leaves you in the shell.</small>
+          </label>
+          <label className="field span-2">
+            <span>tmux session (optional)</span>
+            <input
+              value={tmuxSession}
+              onChange={(event) => setTmuxSession(event.target.value)}
+              placeholder="main"
+              maxLength={40}
+              pattern="[A-Za-z0-9_.\-]{1,40}"
+              title="Letters, numbers, dot, dash and underscore"
+              spellCheck={false}
+            />
+            <small>Attach to this tmux session on connect (created if missing), so work survives disconnects. Split panes open a plain shell.</small>
           </label>
           <label className="field span-2">
             <span>Startup commands</span>
