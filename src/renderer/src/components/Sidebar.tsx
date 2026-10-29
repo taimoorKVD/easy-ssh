@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { LogoMark } from './Icons'
 import type { ConnectionPublic, SessionPhase } from '@shared/types'
 import { IconEdit, IconExternal, IconPlus, IconSearch, IconTrash } from './Icons'
 
@@ -22,6 +23,8 @@ interface SidebarProps {
   onCreate: () => void
   onImport: () => void
   onExport: () => void
+  collapsed: boolean
+  onToggleCollapsed: () => void
 }
 
 export function groupConnections(connections: ConnectionPublic[], query: string): ConnectionGroup[] {
@@ -53,6 +56,14 @@ export function groupConnections(connections: ConnectionPublic[], query: string)
     }))
 }
 
+const FOLD_KEY = 'easy-ssh.foldedGroups'
+
+function initials(name: string): string {
+  const parts = name.replace(/[^\p{L}\p{N}]+/gu, ' ').trim().split(' ').filter(Boolean)
+  if (parts.length === 0) return '?'
+  return (parts.length === 1 ? parts[0].slice(0, 2) : parts[0][0] + parts[1][0]).toUpperCase()
+}
+
 export function Sidebar({
   connections,
   phases,
@@ -67,10 +78,61 @@ export function Sidebar({
   onSystemTerminal,
   onCreate,
   onImport,
-  onExport
+  onExport,
+  collapsed,
+  onToggleCollapsed
 }: SidebarProps) {
   const [query, setQuery] = useState('')
   const groups = groupConnections(connections, query)
+  const [folded, setFolded] = useState<Set<string>>(() => {
+    try {
+      const v = JSON.parse(localStorage.getItem(FOLD_KEY) ?? '[]') as unknown
+      return new Set(Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [])
+    } catch {
+      return new Set()
+    }
+  })
+  const toggleGroup = (name: string): void => {
+    setFolded((cur) => {
+      const next = new Set(cur)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      localStorage.setItem(FOLD_KEY, JSON.stringify([...next]))
+      return next
+    })
+  }
+
+  if (collapsed) {
+    const all = groupConnections(connections, '').flatMap((g) => g.items)
+    return (
+      <aside className="sidebar rail" aria-label="Servers">
+        <div className="rail-logo"><LogoMark /></div>
+        <button className="rail-btn rail-new" title="New connection" aria-label="New connection" onClick={onCreate}>
+          <IconPlus />
+        </button>
+        <div className="rail-scroll">
+          {all.map((c) => {
+            const phase = phases[c.id] ?? 'idle'
+            return (
+              <button
+                key={c.id}
+                className={`rail-avatar${c.id === activeConnectionId ? ' active' : ''}`}
+                title={`${c.name}\n${c.username}@${c.host}:${c.port}`}
+                aria-label={`Connect to ${c.name}`}
+                onClick={() => onConnect(c)}
+              >
+                {initials(c.name)}
+                <span className={`dot ${phase}`} />
+              </button>
+            )
+          })}
+        </div>
+        <button className="rail-btn" title="Expand sidebar (Ctrl+B)" aria-label="Expand sidebar" onClick={onToggleCollapsed}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 6 6 6-6 6" /></svg>
+        </button>
+      </aside>
+    )
+  }
 
   return (
     <aside className="sidebar">
@@ -90,6 +152,9 @@ export function Sidebar({
           <IconPlus />
           New
         </button>
+        <button className="rail-btn sidebar-collapse" title="Collapse sidebar (Ctrl+B)" aria-label="Collapse sidebar" onClick={onToggleCollapsed}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 6-6 6 6 6" /></svg>
+        </button>
       </div>
       {!encryptionAvailable && (
         <p className="keychain-warning">{encryptionReason ?? 'OS keychain is unavailable, so passwords cannot be saved.'}</p>
@@ -103,8 +168,19 @@ export function Sidebar({
         )}
         {groups.map((group) => (
           <section key={group.group || 'ungrouped'} className="group">
-            <h2>{group.group || 'Ungrouped'}</h2>
-            <ul>
+            <h2>
+              <button
+                type="button"
+                className={`group-toggle${folded.has(group.group) && !query ? ' folded' : ''}`}
+                aria-expanded={!(folded.has(group.group) && !query)}
+                onClick={() => toggleGroup(group.group)}
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+                {group.group || 'Ungrouped'}
+                <span className="group-count">{group.items.length}</span>
+              </button>
+            </h2>
+            {!(folded.has(group.group) && !query) && <ul>
               {group.items.map((connection) => {
                 const phase = phases[connection.id]
                 const active = connection.id === activeConnectionId
@@ -137,7 +213,7 @@ export function Sidebar({
                   </li>
                 )
               })}
-            </ul>
+            </ul>}
           </section>
         ))}
       </div>

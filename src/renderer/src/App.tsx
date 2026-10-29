@@ -9,6 +9,7 @@ import { shSingleQuote } from '@shared/shell'
 import { errorMessage } from './lib/errors'
 import { backoffDelay, parseRestoreState, serializeRestoreState, shouldAutoReconnect } from '@shared/reconnect'
 
+const ThemeGallery = lazy(() => import('./components/ThemeGallery'))
 const StatsBar = lazy(() => import('./components/StatsBar'))
 const STATS_KEY = 'easy-ssh.statsEnabled'
 const RESTORE_KEY = 'easy-ssh.restoreTabs.v1'
@@ -460,6 +461,27 @@ export default function App() {
     if (restoreEnabled) localStorage.setItem(RESTORE_KEY, serializeRestoreState(tabs))
     else localStorage.removeItem(RESTORE_KEY)
   }, [tabs, restoreEnabled])
+  const [themeOpen, setThemeOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('easy-ssh.sidebarCollapsed') === '1')
+  const toggleSidebar = useCallback((): void => {
+    setSidebarCollapsed((v) => {
+      localStorage.setItem('easy-ssh.sidebarCollapsed', v ? '0' : '1')
+      return !v
+    })
+  }, [])
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'b') {
+        // Ctrl+B is the tmux prefix: leave it to the terminal when it has focus.
+        if ((e.target as HTMLElement | null)?.closest?.('.xterm')) return
+        e.preventDefault()
+        e.stopPropagation()
+        toggleSidebar()
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [toggleSidebar])
   const [statsEnabled, setStatsEnabled] = useState(() => localStorage.getItem(STATS_KEY) !== '0')
   const toggleStats = (): void => {
     setStatsEnabled((on) => {
@@ -515,6 +537,9 @@ export default function App() {
           </div>
         </div>
         <div className="title-spacer" />
+        <button type="button" className="title-action" title="Appearance" aria-label="Appearance" onClick={() => setThemeOpen(true)} onDoubleClick={(e) => e.stopPropagation()}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.6-.8 1.6-1.6 0-.5-.2-.8-.5-1.2-.3-.3-.5-.7-.5-1.2 0-.9.7-1.6 1.6-1.6H16a5 5 0 0 0 5-5C21 6.4 17 3 12 3Z" /><circle cx="7.5" cy="11" r="1" fill="currentColor" /><circle cx="10.5" cy="7" r="1" fill="currentColor" /><circle cx="15" cy="7.5" r="1" fill="currentColor" /></svg>
+        </button>
         {meta?.platform !== 'darwin' && (
           <div className="window-controls" onDoubleClick={(event) => event.stopPropagation()}>
             <button type="button" aria-label="Minimize" onClick={() => void window.easySsh.windowMinimize()}>
@@ -529,8 +554,10 @@ export default function App() {
           </div>
         )}
       </header>
-      <div className="body">
+      <div className={`body${sidebarCollapsed ? ' rail-mode' : ''}`}>
         <Sidebar
+          collapsed={sidebarCollapsed}
+          onToggleCollapsed={toggleSidebar}
           connections={connections}
           phases={phases}
           activeConnectionId={activeTab?.connectionId}
@@ -764,11 +791,18 @@ export default function App() {
                   ]
                 : []),
               ...tabs.filter((t) => t.id !== activeTab?.id).map((t) => ({ id: `tab-${t.id}`, label: `Go to tab: ${t.title}`, run: () => setActiveTabId(t.id) })),
+              { id: 'sidebar', label: sidebarCollapsed ? 'Expand server sidebar' : 'Collapse server sidebar', hint: 'Ctrl+B', run: toggleSidebar },
+              { id: 'theme', label: 'Change theme…', hint: 'Appearance', run: () => setThemeOpen(true) },
               { id: 'toggle-stats', label: statsEnabled ? 'Hide server stats' : 'Show server stats (CPU, RAM, disk, uptime)', run: toggleStats },
               { id: 'toggle-restore', label: restoreEnabled ? 'Turn off restoring tabs on launch' : 'Turn on restoring tabs on launch', run: toggleRestore },
               { id: 'new-conn', label: 'New connection…', run: () => { setFormError(null); setForm({}) } }
             ]}
           />
+        </Suspense>
+      )}
+      {themeOpen && (
+        <Suspense fallback={null}>
+          <ThemeGallery onClose={() => setThemeOpen(false)} />
         </Suspense>
       )}
     </div>

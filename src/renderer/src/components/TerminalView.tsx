@@ -1,3 +1,4 @@
+import { getXtermTheme, onThemeChange } from '../lib/theme'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { WebglAddon } from '@xterm/addon-webgl'
@@ -33,29 +34,7 @@ export function TerminalView({ sessionId, active, register }: TerminalViewProps)
       lineHeight: 1.35,
       scrollback: 8000,
       smoothScrollDuration: 0,
-      theme: {
-        background: '#090c11',
-        foreground: '#d7dee8',
-        cursor: '#7ee0c6',
-        cursorAccent: '#090c11',
-        selectionBackground: 'rgba(126, 224, 198, 0.28)',
-        black: '#1b212b',
-        red: '#ff8b8b',
-        green: '#7ee0c6',
-        yellow: '#f0c36a',
-        blue: '#8eb6ff',
-        magenta: '#d2b4ff',
-        cyan: '#8ad7e8',
-        white: '#d7dee8',
-        brightBlack: '#667488',
-        brightRed: '#ffb4b4',
-        brightGreen: '#b6ffe8',
-        brightYellow: '#ffe0a3',
-        brightBlue: '#c5d8ff',
-        brightMagenta: '#ead9ff',
-        brightCyan: '#c6f1f8',
-        brightWhite: '#ffffff'
-      }
+      theme: getXtermTheme()
     })
     const fit = new FitAddon()
     term.loadAddon(fit)
@@ -66,6 +45,9 @@ export function TerminalView({ sessionId, active, register }: TerminalViewProps)
       })
     )
     term.open(host)
+    const offTheme = onThemeChange((t) => {
+      term.options.theme = getXtermTheme(t)
+    })
     // GPU renderer: much faster scrolling/redraw than the DOM renderer. Falls back if WebGL is unavailable or lost.
     try {
       const webgl = new WebglAddon()
@@ -134,6 +116,7 @@ export function TerminalView({ sessionId, active, register }: TerminalViewProps)
     applySize()
 
     return () => {
+      offTheme()
       if (resizeTimer) clearTimeout(resizeTimer)
       observer.disconnect()
       term.element?.removeEventListener('contextmenu', onContext)

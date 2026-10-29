@@ -3,16 +3,16 @@ type IconProps = { className?: string }
 export function LogoMark() {
   return (
     <svg className="logo-mark" viewBox="0 0 32 32" aria-hidden="true">
-      <rect width="32" height="32" rx="8" fill="#7ee0c6" />
+      <rect width="32" height="32" rx="8" fill="var(--accent)" />
       <path
         d="M8.5 11.5 14.5 16 8.5 20.5"
         fill="none"
-        stroke="#06231c"
+        stroke="var(--accent-ink)"
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      <path d="M16.5 20.5h7" stroke="#06231c" strokeWidth="2" strokeLinecap="round" />
+      <path d="M16.5 20.5h7" stroke="var(--accent-ink)" strokeWidth="2" strokeLinecap="round" />
     </svg>
   )
 }
