@@ -6,8 +6,8 @@
 
 **Save your servers, connect in one click, and switch between a fast terminal and a full file manager over the same connection.**
 
-[![Latest release](https://img.shields.io/github/v/release/taimoorKVD/easy-ssh?label=release&color=10b981)](https://github.com/taimoorKVD/easy-ssh/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/taimoorKVD/easy-ssh/total?color=10b981)](https://github.com/taimoorKVD/easy-ssh/releases)
+[![Latest release](https://img.shields.io/badge/release-latest-10b981?logo=github)](https://github.com/taimoorKVD/easy-ssh/releases/latest)
+[![Download](https://img.shields.io/badge/download-free-10b981?logo=windows&logoColor=white)](https://github.com/taimoorKVD/easy-ssh/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Electron](https://img.shields.io/badge/Electron-47848F?logo=electron&logoColor=white)](https://www.electronjs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
