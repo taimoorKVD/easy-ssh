@@ -19,9 +19,9 @@
 
 <br><br>
 
-<a href="docs/media/demo.mp4"><img src="docs/media/demo-poster.jpg" alt="▶ Watch the easy-ssh demo (30 s)" width="900"></a>
+<a href="https://github.com/taimoorKVD/easy-ssh/blob/main/docs/media/demo.mp4"><img src="docs/media/demo.gif" alt="easy-ssh demo: connect, terminal, file manager, Ctrl+K palette, split panes" width="900"></a>
 
-<sub>▶ <b><a href="docs/media/demo.mp4">Watch the 30-second demo</a></b> (click the image)</sub>
+<sub>▶ <b><a href="https://github.com/taimoorKVD/easy-ssh/blob/main/docs/media/demo.mp4">Watch the full video (30 s, MP4)</a></b></sub>
 
 </div>
 
