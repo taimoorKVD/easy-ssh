@@ -13,6 +13,8 @@ export interface SessionEvents {
 }
 
 interface PendingHostKey {
+  host: string
+  port: number
   fingerprint: string
   verify: (accept: boolean) => void
 }
@@ -20,6 +22,35 @@ interface PendingHostKey {
 interface SecretBundle {
   password?: string
   passphrase?: string
+}
+
+interface HopRecord {
+  host: string
+  port: number
+  username: string
+  authType: 'password' | 'privateKey'
+  privateKeyPath: string
+}
+
+export interface JumpHop {
+  record: HopRecord & { name: string }
+  secret: SecretBundle
+}
+
+type HostKeyHandler = (key: Buffer, verify: (accept: boolean) => void, host: string, port: number) => void
+
+/** Auth options for one hop, or a user-facing error. */
+function authFor(record: HopRecord, secret: SecretBundle): { error: string; code: SessionErrorCode } | { privateKey?: Buffer } {
+  if (record.authType === 'password') {
+    if (!secret.password) return { error: 'No password is saved for this connection.', code: 'auth' }
+    return {}
+  }
+  if (!record.privateKeyPath) return { error: 'Choose a private key file for this connection.', code: 'key' }
+  try {
+    return { privateKey: readFileSync(record.privateKeyPath) }
+  } catch {
+    return { error: `Could not read the private key at ${record.privateKeyPath}.`, code: 'key' }
+  }
 }
 
 export function fingerprintSha256(key: Buffer): string {
@@ -86,33 +117,31 @@ class SshSession {
     },
     private readonly secret: SecretBundle,
     private readonly events: SessionEvents,
-    private readonly onHostKey: (key: Buffer, verify: (accept: boolean) => void) => void
+    private readonly onHostKey: HostKeyHandler,
+    private readonly jump: JumpHop | null = null
   ) {
     this.host = record.host
     this.port = record.port
   }
 
+  private jumpClient: Client | null = null
+
   start(): void {
-    if (this.record.authType === 'password' && !this.secret.password) {
-      this.emitStatus('error', 'No password is saved for this connection.', 'auth')
+    const auth = authFor(this.record, this.secret)
+    if ('error' in auth) {
+      this.emitStatus('error', auth.error, auth.code)
       this.phase = 'closed'
       return
     }
-
-    let privateKey: Buffer | undefined
-    if (this.record.authType === 'privateKey') {
-      if (!this.record.privateKeyPath) {
-        this.emitStatus('error', 'Choose a private key file for this connection.', 'key')
+    let jumpAuth: { privateKey?: Buffer } | null = null
+    if (this.jump) {
+      const result = authFor(this.jump.record, this.jump.secret)
+      if ('error' in result) {
+        this.emitStatus('error', `Jump host ${this.jump.record.name}: ${result.error}`, result.code)
         this.phase = 'closed'
         return
       }
-      try {
-        privateKey = readFileSync(this.record.privateKeyPath)
-      } catch {
-        this.emitStatus('error', `Could not read the private key at ${this.record.privateKeyPath}.`, 'key')
-        this.phase = 'closed'
-        return
-      }
+      jumpAuth = result
     }
 
     const client = new Client()
@@ -143,28 +172,81 @@ class SshSession {
       if (this.phase !== 'closed') this.finish('disconnected', 'The server closed the connection.')
     })
 
+    const target = {
+      username: this.record.username,
+      password: this.record.authType === 'password' ? this.secret.password : undefined,
+      privateKey: auth.privateKey,
+      passphrase: this.record.authType === 'privateKey' ? this.secret.passphrase : undefined,
+      tryKeyboard: this.record.authType === 'password',
+      readyTimeout: 120_000,
+      keepaliveInterval: 15_000,
+      keepaliveCountMax: 4,
+      // Every hop's key is checked against easy-ssh's known hosts on its own.
+      hostVerifier: this.verifierFor(this.record.host, this.record.port)
+    }
+
+    if (!this.jump || !jumpAuth) {
+      try {
+        client.connect({ ...target, host: this.record.host, port: this.record.port })
+      } catch (error) {
+        this.fail(error)
+      }
+      return
+    }
+
+    const hop = this.jump
+    const jumpClient = new Client()
+    this.jumpClient = jumpClient
+    this.emitText(`\x1b[2mConnecting through jump host ${hop.record.name} (${hop.record.host})…\x1b[0m`)
+    jumpClient.on('keyboard-interactive', (_n, _i, _l, prompts, finish) => finish(prompts.map(() => hop.secret.password ?? '')))
+    jumpClient.on('error', (error) => {
+      const classified = classifyError(error)
+      this.finish('error', `Jump host ${hop.record.name}: ${classified.message}`, classified.code)
+    })
+    jumpClient.on('close', () => {
+      if (this.phase !== 'closed') this.finish('disconnected', `The jump host ${hop.record.name} closed the connection.`)
+    })
+    jumpClient.on('ready', () => {
+      if (this.phase === 'closed') return
+      jumpClient.forwardOut('127.0.0.1', 0, this.record.host, this.record.port, (err, stream) => {
+        if (this.phase === 'closed') return void stream?.close()
+        if (err || !stream) {
+          this.finish('error', `The jump host could not reach ${this.record.host}:${this.record.port}. ${err?.message ?? ''}`.trim(), 'network')
+          return
+        }
+        try {
+          client.connect({ ...target, sock: stream })
+        } catch (error) {
+          this.fail(error)
+        }
+      })
+    })
     try {
-      client.connect({
-        host: this.record.host,
-        port: this.record.port,
-        username: this.record.username,
-        password: this.record.authType === 'password' ? this.secret.password : undefined,
-        privateKey,
-        passphrase: this.record.authType === 'privateKey' ? this.secret.passphrase : undefined,
-        tryKeyboard: this.record.authType === 'password',
+      jumpClient.connect({
+        host: hop.record.host,
+        port: hop.record.port,
+        username: hop.record.username,
+        password: hop.record.authType === 'password' ? hop.secret.password : undefined,
+        privateKey: jumpAuth.privateKey,
+        passphrase: hop.record.authType === 'privateKey' ? hop.secret.passphrase : undefined,
+        tryKeyboard: hop.record.authType === 'password',
         readyTimeout: 120_000,
         keepaliveInterval: 15_000,
         keepaliveCountMax: 4,
-        hostVerifier: (key: Buffer | string, verify: (accept: boolean) => void) => {
-          if (!Buffer.isBuffer(key)) {
-            verify(false)
-            return
-          }
-          this.onHostKey(key, verify)
-        }
+        hostVerifier: this.verifierFor(hop.record.host, hop.record.port)
       })
     } catch (error) {
       this.fail(error)
+    }
+  }
+
+  private verifierFor(host: string, port: number) {
+    return (key: Buffer | string, verify: (accept: boolean) => void): void => {
+      if (!Buffer.isBuffer(key)) {
+        verify(false)
+        return
+      }
+      this.onHostKey(key, verify, host, port)
     }
   }
 
@@ -282,6 +364,11 @@ class SshSession {
     } catch {
       // already closed
     }
+    try {
+      this.jumpClient?.end()
+    } catch {
+      // already closed
+    }
   }
 }
 
@@ -298,10 +385,22 @@ export class SessionManager {
     const record = this.store.get(connectionId)
     if (!record) throw new Error('That connection no longer exists.')
     const secret = await this.store.getSecrets(connectionId)
+    let jump: JumpHop | null = null
+    if (record.jumpHostId) {
+      const hop = this.store.get(record.jumpHostId)
+      if (!hop) throw new Error('The jump host for this connection was deleted. Edit the connection and pick another.')
+      if (hop.id === record.id || hop.jumpHostId) throw new Error('A jump host cannot itself use a jump host.')
+      jump = { record: hop, secret: await this.store.getSecrets(hop.id) }
+    }
     const sessionId = randomUUID()
-    const session = new SshSession(sessionId, record, secret, this.events, (key, verify) => {
-      this.handleHostKey(session, key, verify)
-    })
+    const session = new SshSession(
+      sessionId,
+      record,
+      secret,
+      this.events,
+      (key, verify, host, port) => this.handleHostKey(session, key, verify, host, port),
+      jump
+    )
     this.sessions.set(sessionId, session)
     session.start()
     return sessionId
@@ -342,20 +441,19 @@ export class SessionManager {
     const pending = this.pendingHost.get(sessionId)
     if (!pending) return
     this.pendingHost.delete(sessionId)
-    const session = this.sessions.get(sessionId)
-    if (accept && save && session) this.store.trustHost(session.host, session.port, pending.fingerprint)
+    if (accept && save && this.sessions.has(sessionId)) this.store.trustHost(pending.host, pending.port, pending.fingerprint)
     pending.verify(accept)
   }
 
-  private handleHostKey(session: SshSession, key: Buffer, verify: (accept: boolean) => void): void {
+  private handleHostKey(session: SshSession, key: Buffer, verify: (accept: boolean) => void, host: string, port: number): void {
     const fingerprint = fingerprintSha256(key)
-    const known = this.store.getKnownHost(session.host, session.port)
+    const known = this.store.getKnownHost(host, port)
     if (known?.fingerprint === fingerprint) {
       verify(true)
       return
     }
     if (process.env.EASY_SSH_SMOKE === '1') {
-      this.store.trustHost(session.host, session.port, fingerprint)
+      this.store.trustHost(host, port, fingerprint)
       verify(true)
       return
     }
@@ -365,11 +463,11 @@ export class SessionManager {
       settled = true
       verify(accept)
     }
-    this.pendingHost.set(session.sessionId, { fingerprint, verify: finish })
+    this.pendingHost.set(session.sessionId, { host, port, fingerprint, verify: finish })
     this.events.hostKey({
       sessionId: session.sessionId,
-      host: session.host,
-      port: session.port,
+      host,
+      port,
       fingerprint,
       changed: Boolean(known),
       previousFingerprint: known?.fingerprint

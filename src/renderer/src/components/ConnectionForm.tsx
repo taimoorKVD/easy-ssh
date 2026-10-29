@@ -4,13 +4,14 @@ import type { AuthType, ConnectionInput, ConnectionPublic } from '@shared/types'
 interface ConnectionFormProps {
   initial?: ConnectionPublic
   groups: string[]
+  connections: ConnectionPublic[]
   saving: boolean
   error: string | null
   onClose: () => void
   onSubmit: (input: ConnectionInput) => void
 }
 
-export function ConnectionForm({ initial, groups, saving, error, onClose, onSubmit }: ConnectionFormProps) {
+export function ConnectionForm({ initial, groups, connections, saving, error, onClose, onSubmit }: ConnectionFormProps) {
   const [name, setName] = useState(initial?.name ?? '')
   const [host, setHost] = useState(initial?.host ?? '')
   const [port, setPort] = useState(String(initial?.port ?? 22))
@@ -24,6 +25,9 @@ export function ConnectionForm({ initial, groups, saving, error, onClose, onSubm
   const [defaultDirectory, setDefaultDirectory] = useState(initial?.defaultDirectory ?? '')
   const [startupCommands, setStartupCommands] = useState(initial?.startupCommands.join('\n') ?? '')
   const [group, setGroup] = useState(initial?.group ?? '')
+  const [jumpHostId, setJumpHostId] = useState(initial?.jumpHostId ?? '')
+  const jumpChoices = connections.filter((c) => c.id !== initial?.id && !c.jumpHostId)
+  const isBastion = Boolean(initial && connections.some((c) => c.jumpHostId === initial.id))
   const [localError, setLocalError] = useState<string | null>(null)
 
   async function browseKey(): Promise<void> {
@@ -53,6 +57,7 @@ export function ConnectionForm({ initial, groups, saving, error, onClose, onSubm
       defaultDirectory,
       startupCommands,
       group,
+      jumpHostId: jumpHostId || undefined,
       password: authType === 'password' && password ? password : undefined,
       passphrase: authType === 'privateKey' && passphrase ? passphrase : undefined,
       clearPassword: authType !== 'password',
@@ -107,6 +112,20 @@ export function ConnectionForm({ initial, groups, saving, error, onClose, onSubm
                 <option key={item} value={item} />
               ))}
             </datalist>
+          </label>
+          <label className="field span-2">
+            <span>Jump host (bastion)</span>
+            <select className="select" value={jumpHostId} onChange={(event) => setJumpHostId(event.target.value)} disabled={isBastion}>
+              <option value="">None, connect directly</option>
+              {jumpChoices.map((c) => (
+                <option key={c.id} value={c.id}>{`${c.name} (${c.username}@${c.host})`}</option>
+              ))}
+            </select>
+            <small>
+              {isBastion
+                ? 'Other connections jump through this one, so it connects directly.'
+                : 'Like ssh -J: easy-ssh logs in to the bastion first, then tunnels to this host. Each host key is verified separately.'}
+            </small>
           </label>
           <div className="field span-2">
             <span>Authentication</span>

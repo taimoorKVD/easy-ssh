@@ -21,6 +21,7 @@ interface StoredConnection {
   startupCommands: string[]
   group: string
   forwards?: ForwardRule[]
+  jumpHostId?: string
   createdAt: string
   updatedAt: string
 }
@@ -188,6 +189,7 @@ export class Store {
         defaultDirectory: normalized.defaultDirectory,
         startupCommands: normalized.startupCommands,
         group: normalized.group,
+        jumpHostId: this.checkJump(id, input.jumpHostId),
         forwards: input.forwards === undefined ? existing?.forwards ?? [] : validateForwards(input.forwards),
         createdAt: existing?.createdAt ?? now,
         updatedAt: now
@@ -227,6 +229,17 @@ export class Store {
     })
   }
 
+  private checkJump(id: string, raw: unknown): string | undefined {
+    if (raw === undefined || raw === null || raw === '') return undefined
+    if (typeof raw !== 'string' || !/^[0-9a-f-]{8,80}$/i.test(raw)) throw new Error('Invalid jump host.')
+    if (raw === id) throw new Error('A connection cannot be its own jump host.')
+    const hop = this.connections.find((c) => c.id === raw)
+    if (!hop) throw new Error('That jump host no longer exists.')
+    if (hop.jumpHostId) throw new Error('Pick a jump host that connects directly (it cannot use a jump host itself).')
+    if (this.connections.some((c) => c.jumpHostId === id)) throw new Error('Other connections use this one as their jump host, so it must connect directly.')
+    return raw
+  }
+
   async setForwards(id: string, raw: unknown): Promise<ConnectionPublic> {
     return this.enqueue(async () => {
       const existing = this.connections.find((connection) => connection.id === id)
@@ -241,6 +254,7 @@ export class Store {
   async remove(id: string): Promise<void> {
     return this.enqueue(async () => {
       this.connections = this.connections.filter((connection) => connection.id !== id)
+      for (const c of this.connections) if (c.jumpHostId === id) delete c.jumpHostId
       delete this.secrets.items[id]
       this.flushConnections()
       this.flushSecrets()

@@ -814,6 +814,7 @@ export default function App() {
         <ConnectionForm
           initial={form.connection}
           groups={groups}
+          connections={connections}
           saving={formSaving}
           error={formError}
           onClose={() => setForm(null)}
