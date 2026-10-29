@@ -1,8 +1,7 @@
 import { randomUUID } from 'node:crypto'
-import { createReadStream, createWriteStream, promises as fs } from 'node:fs'
+import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
-import { pipeline } from 'node:stream/promises'
 import { Transform } from 'node:stream'
 import type { Client, FileEntryWithStats, SFTPWrapper, Stats } from 'ssh2'
 import {
@@ -16,6 +15,10 @@ import {
   type TransferProgress
 } from '../shared/remote-fs'
 import type { SessionManager } from './ssh-manager'
+import { runLimited } from '../shared/batcher'
+
+const FILE_CONCURRENCY = 4
+const FAST_OPTS = { concurrency: 32, chunkSize: 32 * 1024 }
 
 type ProgressSink = (progress: TransferProgress) => void
 
@@ -200,10 +203,11 @@ export class SftpManager {
       if (stats.isDirectory()) {
         plan.dirs.push(local)
         const items = await wrap<FileEntryWithStats[]>(remote, (done) => sftp.readdir(remote, done))
-        for (const item of items) {
-          if (item.filename === '.' || item.filename === '..') continue
-          await walk(joinRemote(remote, item.filename), join(local, safeLocalName(item.filename)))
-        }
+        await runLimited(
+          items.filter((item) => item.filename !== '.' && item.filename !== '..'),
+          8,
+          (item) => walk(joinRemote(remote, item.filename), join(local, safeLocalName(item.filename)))
+        )
       } else {
         plan.files.push({ from: remote, to: local, size: stats.size })
       }
@@ -235,10 +239,12 @@ export class SftpManager {
       const plan = await this.planRemote(sftp, remotePaths, localDir, targetName)
       report.start(plan)
       for (const dir of plan.dirs) await fs.mkdir(dir, { recursive: true })
-      for (const file of plan.files) {
-        await pipeline(sftp.createReadStream(file.from), report.meter(), createWriteStream(file.to))
+      await runLimited(plan.files, FILE_CONCURRENCY, async (file) => {
+        await wrap<void>(file.from, (done) =>
+          sftp.fastGet(file.from, file.to, { ...FAST_OPTS, step: (_t, chunk) => report.add(chunk) }, (err) => done(err))
+        )
         report.fileDone()
-      }
+      })
     })
   }
 
@@ -253,12 +259,12 @@ export class SftpManager {
           if (!exists) throw error
         })
       }
-      for (const file of plan.files) {
-        await pipeline(createReadStream(file.from), report.meter(), sftp.createWriteStream(file.to)).catch((error) => {
-          throw new Error(friendlySftpError(error, file.to))
-        })
+      await runLimited(plan.files, FILE_CONCURRENCY, async (file) => {
+        await wrap<void>(file.to, (done) =>
+          sftp.fastPut(file.from, file.to, { ...FAST_OPTS, step: (_t, chunk) => report.add(chunk) }, (err) => done(err))
+        )
         report.fileDone()
-      }
+      })
     })
   }
 
@@ -271,7 +277,7 @@ export class SftpManager {
     sessionId: string,
     kind: 'upload' | 'download',
     label: string,
-    run: (report: { start(plan: Plan): void; meter(): Transform; fileDone(): void }) => Promise<void>
+    run: (report: { start(plan: Plan): void; meter(): Transform; add(bytes: number): void; fileDone(): void }) => Promise<void>
   ): Promise<void> {
     const state: TransferProgress = {
       sessionId,
@@ -307,6 +313,10 @@ export class SftpManager {
               callback(null, chunk)
             }
           }),
+        add: (bytes) => {
+          state.bytesDone += bytes
+          emit()
+        },
         fileDone: () => {
           state.filesDone += 1
           emit()

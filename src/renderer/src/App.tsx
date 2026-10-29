@@ -1,13 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
 import type { AppMeta, ConnectionInput, ConnectionPublic, HostKeyPrompt, SessionErrorCode, SessionPhase, SessionStatus } from '@shared/types'
 import { ConnectionForm } from './components/ConnectionForm'
 import { IconClose, LogoMark } from './components/Icons'
 import { ConfirmDialog, HostKeyDialog, ProblemSheet, Toast } from './components/Overlays'
 import { Sidebar } from './components/Sidebar'
 import { TerminalView } from './components/TerminalView'
-import { FileManager } from './components/FileManager'
 import { shSingleQuote } from '@shared/shell'
 import { errorMessage } from './lib/errors'
+
+const loadFileManager = () => import('./components/FileManager').then((m) => ({ default: m.FileManager }))
+const FileManager = lazy(loadFileManager)
+// Warm the File Manager chunk once the app is idle so the first switch is instant.
+setTimeout(() => void loadFileManager(), 1500)
 
 interface Tab {
   id: string
@@ -547,6 +551,7 @@ export default function App() {
                 register={registerWriter}
               />
             ))}
+            <Suspense fallback={null}>
             {tabs
               .filter((tab) => tab.filesOpened)
               .map((tab) => (
@@ -559,6 +564,7 @@ export default function App() {
                   onOpenTerminalHere={(path) => openTerminalHere(tab.id, path)}
                 />
               ))}
+            </Suspense>
             {activeTab?.phase === 'connecting' && (
               <div className="connecting-banner">Connecting to {activeConnection ? `${activeConnection.username}@${activeConnection.host}` : activeTab.title}…</div>
             )}

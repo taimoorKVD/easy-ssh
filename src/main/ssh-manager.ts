@@ -125,6 +125,15 @@ class SshSession {
       if (message.trim()) this.emitText(message)
     })
     client.on('ready', () => this.openShell(client))
+    client.on('connect', () => {
+      // Disable Nagle so each keystroke goes out immediately.
+      const sock = (client as unknown as { _sock?: { setNoDelay?: (v: boolean) => void } })._sock
+      try {
+        sock?.setNoDelay?.(true)
+      } catch {
+        // not a TCP socket
+      }
+    })
     client.on('error', (error) => this.fail(error))
     client.on('close', () => {
       if (this.phase !== 'closed') this.finish('disconnected', 'The server closed the connection.')
@@ -202,10 +211,10 @@ class SshSession {
         this.stream = stream
         this.phase = 'open'
         this.emitStatus('connected', 'Connected')
-        this.armStartup(700)
+        this.armStartup(350)
         stream.on('data', (chunk: Buffer) => {
           this.emitData(this.stdout.write(chunk))
-          this.armStartup(160)
+          this.armStartup(90)
         })
         const stderr = stream.stderr as NodeJS.ReadableStream
         stderr.on('data', (chunk: Buffer | string) => {

@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { SessionStatus } from '../shared/types'
 import { registerIpc } from './ipc'
 import { recordSmokeData, recordSmokeStatus, runSmoke } from './smoke'
+import { OutputBatcher } from '../shared/batcher'
 import { SessionManager } from './ssh-manager'
 import { SftpManager } from './sftp-manager'
 import { Store } from './store'
@@ -161,12 +162,15 @@ if (gotLock) {
     const send = (channel: string, payload: unknown): void => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload)
     }
+    // Coalesce terminal output so floods become a few IPC messages per frame.
+    const output = new OutputBatcher((sessionId, data) => send('ssh:data', { sessionId, data }))
     const sessions = new SessionManager(store, {
       data: (sessionId, data) => {
         if (process.env.EASY_SSH_SMOKE === '1') recordSmokeData(sessionId, data)
-        send('ssh:data', { sessionId, data })
+        output.push(sessionId, data)
       },
       status: (status: SessionStatus) => {
+        output.flushKey(status.sessionId)
         if (process.env.EASY_SSH_SMOKE === '1') recordSmokeStatus(status)
         send('ssh:status', status)
       },

@@ -750,3 +750,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 .fm-perm-head { font-size: 12px; color: var(--text-dim); text-align: center; }
 .fm-perm-row label { display: flex; justify-content: center; }
 .fm-perm-row input { accent-color: var(--accent); width: 16px; height: 16px; }
+
+/* Skip layout/paint for off-screen rows so big folders scroll smoothly. */
+.fm-row { content-visibility: auto; contain-intrinsic-size: auto 32px; }

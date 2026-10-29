@@ -1,5 +1,6 @@
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
+import { WebglAddon } from '@xterm/addon-webgl'
 import { Terminal } from '@xterm/xterm'
 import { useEffect, useRef } from 'react'
 
@@ -31,6 +32,7 @@ export function TerminalView({ sessionId, active, register }: TerminalViewProps)
       fontSize: 14,
       lineHeight: 1.35,
       scrollback: 8000,
+      smoothScrollDuration: 0,
       theme: {
         background: '#090c11',
         foreground: '#d7dee8',
@@ -64,6 +66,14 @@ export function TerminalView({ sessionId, active, register }: TerminalViewProps)
       })
     )
     term.open(host)
+    // GPU renderer: much faster scrolling/redraw than the DOM renderer. Falls back if WebGL is unavailable or lost.
+    try {
+      const webgl = new WebglAddon()
+      webgl.onContextLoss(() => webgl.dispose())
+      term.loadAddon(webgl)
+    } catch {
+      // DOM renderer stays in place
+    }
     termRef.current = term
     fitRef.current = fit
 
@@ -105,11 +115,26 @@ export function TerminalView({ sessionId, active, register }: TerminalViewProps)
       fit.fit()
       if (term.cols > 1 && term.rows > 1) window.easySsh.resize(sessionRef.current, term.cols, term.rows)
     }
-    const observer = new ResizeObserver(() => applySize())
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null
+    let lastSent = ''
+    const applySizeNow = (): void => {
+      if (!activeRef.current) return
+      fit.fit()
+      const key = `${term.cols}x${term.rows}`
+      if (term.cols > 1 && term.rows > 1 && key !== lastSent) {
+        lastSent = key
+        window.easySsh.resize(sessionRef.current, term.cols, term.rows)
+      }
+    }
+    const observer = new ResizeObserver(() => {
+      if (resizeTimer) clearTimeout(resizeTimer)
+      resizeTimer = setTimeout(applySizeNow, 50)
+    })
     observer.observe(host)
     applySize()
 
     return () => {
+      if (resizeTimer) clearTimeout(resizeTimer)
       observer.disconnect()
       term.element?.removeEventListener('contextmenu', onContext)
       registerRef.current(sessionRef.current, null)

@@ -53,6 +53,16 @@ function FileIcon({ entry }: { entry: RemoteEntry }) {
   )
 }
 
+function sameListing(a: RemoteEntry[], b: RemoteEntry[]): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i]
+    const y = b[i]
+    if (x.path !== y.path || x.size !== y.size || x.mtime !== y.mtime || x.kind !== y.kind) return false
+  }
+  return true
+}
+
 export function FileManager({ sessionId, active, connected, notify, onOpenTerminalHere }: FileManagerProps) {
   const [path, setPath] = useState<string | null>(null)
   const [entries, setEntries] = useState<RemoteEntry[]>([])
@@ -76,22 +86,42 @@ export function FileManager({ sessionId, active, connected, notify, onOpenTermin
   const [dragOver, setDragOver] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const loadSeq = useRef(0)
+  // Directory listings cached per session: show instantly, then refresh in the background.
+  const cacheRef = useRef(new Map<string, { path: string; entries: RemoteEntry[] }>())
 
   const load = useCallback(
     async (target: string, pushHistory = true) => {
       const seq = ++loadSeq.current
-      setLoading(true)
       setError(null)
+      const cached = cacheRef.current.get(target)
+      if (cached) {
+        setPath((current) => {
+          if (pushHistory && current && current !== cached.path) setHistory((h) => [...h.slice(-49), current])
+          return cached.path
+        })
+        setEntries(cached.entries)
+        setSelected(new Set())
+        setAnchor(null)
+        pushHistory = false
+      } else {
+        setLoading(true)
+      }
       try {
         const result = await window.easySsh.sftpList(sessionId, target)
         if (seq !== loadSeq.current) return
+        cacheRef.current.set(target, result)
+        cacheRef.current.set(result.path, result)
+        if (cacheRef.current.size > 200) cacheRef.current.delete(cacheRef.current.keys().next().value as string)
+        if (cached && sameListing(cached.entries, result.entries)) return
         setPath((current) => {
           if (pushHistory && current && current !== result.path) setHistory((h) => [...h.slice(-49), current])
           return result.path
         })
         setEntries(result.entries)
-        setSelected(new Set())
-        setAnchor(null)
+        if (!cached) {
+          setSelected(new Set())
+          setAnchor(null)
+        }
       } catch (err) {
         if (seq === loadSeq.current) setError(errorMessage(err))
       } finally {
@@ -151,6 +181,23 @@ export function FileManager({ sessionId, active, connected, notify, onOpenTermin
       window.removeEventListener('blur', close)
     }
   }, [menu])
+
+  // Warm the cache for a folder the pointer rests on, so opening it is instant.
+  const prefetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const prefetch = (entry: RemoteEntry): void => {
+    if (prefetchTimer.current) clearTimeout(prefetchTimer.current)
+    const isDir = entry.kind === 'dir' || (entry.kind === 'link' && entry.linkToDir)
+    if (!isDir || !connected || cacheRef.current.has(entry.path)) return
+    prefetchTimer.current = setTimeout(() => {
+      window.easySsh
+        .sftpList(sessionId, entry.path)
+        .then((result) => {
+          cacheRef.current.set(entry.path, result)
+          cacheRef.current.set(result.path, result)
+        })
+        .catch(() => undefined)
+    }, 180)
+  }
 
   const visible = useMemo(() => sortEntries(filterHidden(entries, showHidden), sortKey, sortDir), [entries, showHidden, sortKey, sortDir])
   const order = useMemo(() => visible.map((entry) => entry.path), [visible])
@@ -533,6 +580,7 @@ export function FileManager({ sessionId, active, connected, notify, onOpenTermin
               onClick={(event) => clickRow(event, entry)}
               onDoubleClick={() => void openEntry(entry)}
               onContextMenu={(event) => onContext(event, entry)}
+              onMouseEnter={() => prefetch(entry)}
             >
               <span className="icon-col">
                 <FileIcon entry={entry} />
