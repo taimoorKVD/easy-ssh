@@ -1,6 +1,6 @@
 {
   "name": "easy-ssh",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Save SSH connections and open them in one click.",
   "homepage": "https://github.com/easy-ssh/easy-ssh",
   "author": "easy-ssh",
@@ -21,6 +21,7 @@
     "smoke:launch": "node scripts/smoke-launch.mjs"
   },
   "dependencies": {
+    "electron-updater": "^6.8.11",
     "ssh2": "^1.17.0"
   },
   "devDependencies": {
@@ -90,13 +91,21 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "easy-ssh"
+      "shortcutName": "easy-ssh",
+      "artifactName": "easy-ssh-Setup-${version}.${ext}"
     },
     "deb": {
       "depends": [
         "libsecret-1-0"
       ]
     },
-    "publish": null
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "taimoorKVD",
+        "repo": "easy-ssh",
+        "releaseType": "release"
+      }
+    ]
   }
 }

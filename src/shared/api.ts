@@ -38,6 +38,11 @@ export interface EasySshApi {
   setForwards(connectionId: string, rules: ForwardRule[]): Promise<ConnectionPublic>
   setMeta(connectionId: string, meta: { favorite?: boolean; tags?: string[] }): Promise<ConnectionPublic>
   importSshConfig(): Promise<ImportResult>
+  updateCheck(): Promise<void>
+  updateState(): Promise<import('./update-state').UpdateState>
+  updateInstall(): Promise<void>
+  updateLater(version: string): Promise<void>
+  onUpdateState(callback: (state: import('./update-state').UpdateState) => void): () => void
   backupCreate(password: string, includeKeys: boolean): Promise<{ canceled: boolean; path?: string; hosts?: number; snippets?: number; keys?: number }>
   backupRestore(password: string): Promise<{ canceled: boolean; imported?: number; skipped?: number; snippets?: number; keys?: number }>
   listForwards(sessionId: string): Promise<string[]>

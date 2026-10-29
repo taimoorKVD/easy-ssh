@@ -32,7 +32,7 @@ function trustedSender(event: IpcMainEvent | IpcMainInvokeEvent): boolean {
 
 type Handler = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown
 type Listener = (event: IpcMainEvent, ...args: unknown[]) => void
-function handle(channel: string, fn: Handler): void {
+export function handle(channel: string, fn: Handler): void {
   ipcMain.handle(channel, (event, ...args) => {
     if (!trustedSender(event)) throw new Error('Blocked an IPC call from an untrusted page.')
     return fn(event, ...args)

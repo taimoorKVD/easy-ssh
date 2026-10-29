@@ -22,6 +22,7 @@ const CommandPalette = lazy(() => import('./components/CommandPalette'))
 const ForwardsPanel = lazy(() => import('./components/ForwardsPanel'))
 const KeyManager = lazy(() => import('./components/KeyManager'))
 const BackupDialog = lazy(() => import('./components/BackupDialog'))
+const UpdatePopup = lazy(() => import('./components/UpdatePopup'))
 // Warm the File Manager chunk once the app is idle so the first switch is instant.
 setTimeout(() => void loadFileManager(), 1500)
 
@@ -918,6 +919,7 @@ export default function App() {
                 hint: 'Shortcut',
                 run: toggleCtrlK
               },
+              { id: 'update-check', label: 'Check for updates', hint: 'Help', run: () => void window.easySsh.updateCheck() },
               { id: 'backup-create', label: 'Create encrypted backup…', run: () => setBackupMode('create') },
               { id: 'backup-restore', label: 'Restore encrypted backup…', run: () => setBackupMode('restore') },
               { id: 'import-ssh-config', label: 'Import from ~/.ssh/config', run: () => void importConnections(true) },
@@ -930,6 +932,9 @@ export default function App() {
           />
         </Suspense>
       )}
+      <Suspense fallback={null}>
+        <UpdatePopup />
+      </Suspense>
       {backupMode && (
         <Suspense fallback={null}>
           <BackupDialog mode={backupMode} notify={notify} onRestored={() => void refresh()} onClose={() => setBackupMode(null)} />

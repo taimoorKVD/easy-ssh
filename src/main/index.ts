@@ -1,4 +1,5 @@
 import { app, BrowserWindow, Menu, nativeTheme, shell } from 'electron'
+import { startUpdater } from './updater'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { SessionStatus } from '../shared/types'
@@ -97,6 +98,8 @@ function sendMenu(action: 'new' | 'import' | 'export'): void {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('menu:action', action)
 }
 
+let checkForUpdates: ((manual: boolean) => void) | null = null
+
 function installMenu(): void {
   const template: Electron.MenuItemConstructorOptions[] = [
     {
@@ -134,6 +137,14 @@ function installMenu(): void {
     {
       label: 'Window',
       submenu: [{ role: 'minimize' }, { role: 'close' }]
+    },
+    {
+      label: 'Help',
+      submenu: [
+        { label: 'Check for updates…', click: () => checkForUpdates?.(true) },
+        { type: 'separator' },
+        { label: `easy-ssh v${app.getVersion()}`, enabled: false }
+      ]
     }
   ]
   if (!app.isPackaged) {
@@ -201,6 +212,7 @@ if (gotLock) {
     registerIpc(() => mainWindow, store, sessions, sftp, send)
     installMenu()
     mainWindow = createWindow()
+    checkForUpdates = startUpdater(send).check
     app.on('before-quit', () => sessions.disconnectAll())
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow()

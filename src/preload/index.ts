@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'ele
 import type { TransferProgress } from '../shared/remote-fs'
 import type { EasySshApi } from '../shared/api'
 import type { SnippetInput } from '../shared/snippets'
+import type { UpdateState } from '../shared/update-state'
 import type { ConnectionInput, HostKeyPrompt, SessionStatus } from '../shared/types'
 
 const api = {
@@ -96,6 +97,15 @@ const api = {
     const listener = (_event: IpcRendererEvent, progress: TransferProgress) => callback(progress)
     ipcRenderer.on('sftp:progress', listener)
     return () => ipcRenderer.removeListener('sftp:progress', listener)
+  },
+  updateCheck: () => ipcRenderer.invoke('update:check'),
+  updateState: () => ipcRenderer.invoke('update:state'),
+  updateInstall: () => ipcRenderer.invoke('update:install'),
+  updateLater: (version: string) => ipcRenderer.invoke('update:later', version),
+  onUpdateState: (callback) => {
+    const listener = (_event: IpcRendererEvent, state: UpdateState): void => callback(state)
+    ipcRenderer.on('update:state', listener)
+    return () => ipcRenderer.removeListener('update:state', listener)
   },
   onMenu: (callback) => {
     const listener = (_event: IpcRendererEvent, action: 'new' | 'import' | 'export') => callback(action)
