@@ -419,9 +419,11 @@ button:disabled { cursor: default; opacity: 0.55; }
   gap: 12px;
   padding: 0 10px;
   border-top: 1px solid var(--line);
-  background: #10151c;
+  background: var(--bg-raised);
   font-size: 12px;
   color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
 }
 .status-main, .status-actions { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .status-main { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
@@ -801,7 +803,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 .stats-bar .hot { color: #f06d6d; font-weight: 600; }
 
 /* Themed scrollbars (app-wide, incl. xterm viewport) */
-* { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
 ::-webkit-scrollbar { width: 9px; height: 9px; background: transparent; }
 ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
 ::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
@@ -864,3 +865,16 @@ html.theme-anim, html.theme-anim *, html.theme-anim *::before, html.theme-anim *
 .group-toggle svg { transition: transform 160ms ease; }
 .group-toggle.folded svg { transform: rotate(-90deg); }
 .group-count { font-weight: 500; opacity: 0.7; }
+
+/* Layout containment: the window never scrolls; every pane clips its own content. */
+html, body, #root { width: 100vw; height: 100vh; overflow: hidden; }
+.app { width: 100%; grid-template-columns: minmax(0, 1fr); overflow: hidden; }
+.body, .workspace, .terminal-stage, .terminal-pane { overflow: hidden; }
+.body > * { min-width: 0; }
+.status-main { flex: 1 1 auto; }
+.status-actions { flex: 0 1 auto; overflow: hidden; white-space: nowrap; }
+.status-actions > * { flex: none; white-space: nowrap; }
+.status-actions .hint { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.stats-bar { flex: none; }
+@media (max-width: 1280px) { .status-actions .hint { display: none; } }
+@media (max-width: 1000px) { .stats-bar span:nth-child(4) { display: none; } }
