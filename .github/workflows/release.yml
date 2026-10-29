@@ -89,22 +89,25 @@ jobs:
           git tag -a "v$V" -m "easy-ssh v$V" "$GITHUB_SHA"
           git push origin "v$V"
 
-      - name: Build and publish release
+      - name: Build installer
         env:
           NODE_OPTIONS: --experimental-require-module
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npm run build
-          npx electron-builder --win nsis --publish always
+          npx electron-builder --win nsis --publish never
 
-      - name: Upload stable-name copy for the website link
+      # The repo uses immutable releases: assets cannot be added after a release is published,
+      # so everything is uploaded in a single create call (gh uploads, then publishes).
+      - name: Publish release with all assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           V=${{ steps.version.outputs.version }}
-          cp "release/easy-ssh-Setup-$V.exe" release/easy-ssh-Setup.exe
-          gh release upload "v$V" release/easy-ssh-Setup.exe --clobber
-          gh release edit "v$V" --draft=false --latest
+          cd release
+          cp "easy-ssh-Setup-$V.exe" easy-ssh-Setup.exe
+          ls -l "easy-ssh-Setup-$V.exe" "easy-ssh-Setup-$V.exe.blockmap" latest.yml easy-ssh-Setup.exe
+          gh release create "v$V" --verify-tag --latest --title "easy-ssh $V" --generate-notes \
+            "easy-ssh-Setup-$V.exe" "easy-ssh-Setup-$V.exe.blockmap" latest.yml easy-ssh-Setup.exe
           gh release view "v$V" --json url,isDraft,assets --jq '{url, isDraft, assets: [.assets[].name]}'
 
       - name: Clean up tag and release if anything failed
@@ -113,5 +116,5 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           V=${{ steps.version.outputs.version }}
-          gh release delete "v$V" --yes --cleanup-tag 2>/dev/null || true
+          if [ "$(gh release view "v$V" --json isDraft --jq .isDraft 2>/dev/null)" = "true" ]; then gh release delete "v$V" --yes || true; fi
           git push origin ":refs/tags/v$V" 2>/dev/null || true
