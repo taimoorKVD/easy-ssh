@@ -9,9 +9,16 @@ interface TerminalViewProps {
   sessionId: string
   active: boolean
   register: (sessionId: string, write: ((data: string) => void) | null) => void
+  /** When set, keystrokes go here instead of only this session (broadcast). */
+  onInput?: (data: string) => void
+  onFocus?: () => void
 }
 
-export function TerminalView({ sessionId, active, register }: TerminalViewProps) {
+export function TerminalView({ sessionId, active, register, onInput, onFocus }: TerminalViewProps) {
+  const inputRef = useRef(onInput)
+  inputRef.current = onInput
+  const focusRef = useRef(onFocus)
+  focusRef.current = onFocus
   const hostRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
@@ -89,8 +96,10 @@ export function TerminalView({ sessionId, active, register }: TerminalViewProps)
     term.element?.addEventListener('contextmenu', onContext)
 
     term.onData((data) => {
-      window.easySsh.write(sessionRef.current, data)
+      if (inputRef.current) inputRef.current(data)
+      else window.easySsh.write(sessionRef.current, data)
     })
+    term.textarea?.addEventListener('focus', () => focusRef.current?.())
 
     const applySize = (): void => {
       if (!activeRef.current) return

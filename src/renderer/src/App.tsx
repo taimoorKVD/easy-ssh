@@ -32,6 +32,10 @@ interface Tab {
   mode: 'terminal' | 'files'
   filesOpened: boolean
   retryAt?: number
+  /** Extra terminals split inside this tab (same host, separate sessions). */
+  panes?: string[]
+  splitDir?: 'row' | 'column'
+  broadcast?: boolean
 }
 
 const MAX_TABS = 16
@@ -222,6 +226,10 @@ export default function App() {
       setHostKey(null)
     }
     void window.easySsh.disconnect(tab.sessionId)
+    for (const pane of tab.panes ?? []) {
+      ignored.current.add(pane)
+      void window.easySsh.disconnect(pane)
+    }
     const remaining = currentTabs.filter((item) => item.id !== tabId)
     setTabs(remaining)
     if (activeRef.current === tabId) {
@@ -497,6 +505,37 @@ export default function App() {
     })
   }
 
+  // ---- Split panes + broadcast input ----
+  const splitTab = useCallback(async (tabId: string, dir: 'row' | 'column') => {
+    const tab = tabsRef.current.find((t) => t.id === tabId)
+    if (!tab) return
+    if ((tab.panes?.length ?? 0) >= 3) {
+      notify('A tab holds up to 4 terminals.')
+      return
+    }
+    try {
+      const sessionId = await window.easySsh.connect(tab.connectionId)
+      setTabs((cur) => cur.map((t) => (t.id === tabId ? { ...t, mode: 'terminal', splitDir: dir, panes: [...(t.panes ?? []), sessionId] } : t)))
+    } catch (err) {
+      notify(errorMessage(err))
+    }
+  }, [notify])
+  const closePane = useCallback((tabId: string, sessionId: string) => {
+    ignored.current.add(sessionId)
+    void window.easySsh.disconnect(sessionId)
+    setTabs((cur) => cur.map((t) => {
+      if (t.id !== tabId) return t
+      const panes = (t.panes ?? []).filter((p) => p !== sessionId)
+      return { ...t, panes, broadcast: panes.length ? t.broadcast : false }
+    }))
+  }, [])
+  const toggleBroadcast = useCallback((tabId: string) => {
+    setTabs((cur) => cur.map((t) => (t.id === tabId ? { ...t, broadcast: !t.broadcast } : t)))
+  }, [])
+  const broadcastTo = (tab: Tab) => (data: string): void => {
+    for (const id of [tab.sessionId, ...(tab.panes ?? [])]) window.easySsh.write(id, data)
+  }
+
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? null
   const activeConnection = connections.find((connection) => connection.id === activeTab?.connectionId)
   const phases: Record<string, SessionPhase | undefined> = {}
@@ -607,6 +646,19 @@ export default function App() {
                 <strong>{activeTab.title}</strong>
                 {activeConnection && <span>{`${activeConnection.username}@${activeConnection.host}`}</span>}
               </div>
+              <div className="split-tools">
+                <button type="button" title="Split right" aria-label="Split right" onClick={() => void splitTab(activeTab.id, 'row')}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3.5" y="4.5" width="17" height="15" rx="2" /><path d="M12 4.5v15" /></svg>
+                </button>
+                <button type="button" title="Split down" aria-label="Split down" onClick={() => void splitTab(activeTab.id, 'column')}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3.5" y="4.5" width="17" height="15" rx="2" /><path d="M3.5 12h17" /></svg>
+                </button>
+                {(activeTab.panes?.length ?? 0) > 0 && (
+                  <button type="button" className={activeTab.broadcast ? 'on' : ''} title="Type in all panes at once" aria-pressed={!!activeTab.broadcast} onClick={() => toggleBroadcast(activeTab.id)}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M5 12a7 7 0 0 1 14 0M8.5 12a3.5 3.5 0 0 1 7 0" /><circle cx="12" cy="12" r="1.2" fill="currentColor" /><path d="M12 13v7" /></svg>
+                  </button>
+                )}
+              </div>
               <div className="mode-toggle" role="tablist" aria-label="Session mode">
                 <span className={`mode-thumb${activeTab.mode === 'files' ? ' right' : ''}`} aria-hidden="true" />
                 <button
@@ -656,14 +708,28 @@ export default function App() {
                 )}
               </div>
             )}
-            {tabs.map((tab) => (
-              <TerminalView
-                key={tab.id}
-                sessionId={tab.sessionId}
-                active={tab.id === activeTabId && tab.mode === 'terminal'}
-                register={registerWriter}
-              />
-            ))}
+            {tabs.map((tab) => {
+              const shown = tab.id === activeTabId && tab.mode === 'terminal'
+              const panes = tab.panes ?? []
+              const input = tab.broadcast && panes.length ? broadcastTo(tab) : undefined
+              return (
+                <div key={tab.id} className={`tab-stage ${tab.splitDir ?? 'row'}${shown ? ' active' : ''}${input ? ' broadcasting' : ''}`}>
+                  <TerminalView sessionId={tab.sessionId} active={shown} register={registerWriter} onInput={input} />
+                  {panes.map((pane) => (
+                    <div key={pane} className="split-pane">
+                      <TerminalView sessionId={pane} active={shown} register={registerWriter} onInput={input} />
+                      <button type="button" className="pane-close" title="Close pane" aria-label="Close pane" onClick={() => closePane(tab.id, pane)}>×</button>
+                    </div>
+                  ))}
+                </div>
+              )
+            })}
+            {activeTab?.broadcast && (activeTab.panes?.length ?? 0) > 0 && activeTab.mode === 'terminal' && (
+              <div className="broadcast-badge" role="status">
+                Broadcasting keystrokes to {(activeTab.panes?.length ?? 0) + 1} terminals
+                <button type="button" onClick={() => toggleBroadcast(activeTab.id)}>Stop</button>
+              </div>
+            )}
             <Suspense fallback={null}>
             {tabs
               .filter((tab) => tab.filesOpened)
@@ -791,6 +857,15 @@ export default function App() {
                   ]
                 : []),
               ...tabs.filter((t) => t.id !== activeTab?.id).map((t) => ({ id: `tab-${t.id}`, label: `Go to tab: ${t.title}`, run: () => setActiveTabId(t.id) })),
+              ...(activeTab
+                ? [
+                    { id: 'split-right', label: 'Split terminal right', run: () => void splitTab(activeTab.id, 'row') },
+                    { id: 'split-down', label: 'Split terminal down', run: () => void splitTab(activeTab.id, 'column') },
+                    ...((activeTab.panes?.length ?? 0) > 0
+                      ? [{ id: 'broadcast', label: activeTab.broadcast ? 'Stop broadcasting input' : 'Broadcast input to all panes', run: () => toggleBroadcast(activeTab.id) }]
+                      : [])
+                  ]
+                : []),
               { id: 'sidebar', label: sidebarCollapsed ? 'Expand server sidebar' : 'Collapse server sidebar', hint: 'Ctrl+B', run: toggleSidebar },
               { id: 'theme', label: 'Change theme…', hint: 'Appearance', run: () => setThemeOpen(true) },
               { id: 'toggle-stats', label: statsEnabled ? 'Hide server stats' : 'Show server stats (CPU, RAM, disk, uptime)', run: toggleStats },
