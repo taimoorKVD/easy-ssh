@@ -7,6 +7,10 @@ import { Sidebar } from './components/Sidebar'
 import { TerminalView } from './components/TerminalView'
 import { shSingleQuote } from '@shared/shell'
 import { errorMessage } from './lib/errors'
+import { backoffDelay, parseRestoreState, serializeRestoreState, shouldAutoReconnect } from '@shared/reconnect'
+
+const RESTORE_KEY = 'easy-ssh.restoreTabs.v1'
+const RESTORE_ENABLED_KEY = 'easy-ssh.restoreEnabled'
 
 const loadFileManager = () => import('./components/FileManager').then((m) => ({ default: m.FileManager }))
 const FileManager = lazy(loadFileManager)
@@ -24,6 +28,7 @@ interface Tab {
   code?: SessionErrorCode
   mode: 'terminal' | 'files'
   filesOpened: boolean
+  retryAt?: number
 }
 
 const MAX_TABS = 16
@@ -392,6 +397,75 @@ export default function App() {
     [setMode]
   )
 
+  // ---- Auto-reconnect with backoff (network drops only, on sessions that were live) ----
+  const liveTabs = useRef(new Set<string>())
+  const attempts = useRef(new Map<string, number>())
+  const retryTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
+  const reconnectRef = useRef(reconnect)
+  reconnectRef.current = reconnect
+  useEffect(() => {
+    for (const tab of tabs) {
+      if (tab.phase === 'connected') {
+        liveTabs.current.add(tab.id)
+        attempts.current.delete(tab.id)
+        continue
+      }
+      if (retryTimers.current.has(tab.id)) continue
+      const tries = attempts.current.get(tab.id) ?? 0
+      if (!shouldAutoReconnect(tab, liveTabs.current.has(tab.id), tries)) continue
+      const delay = backoffDelay(tries)
+      attempts.current.set(tab.id, tries + 1)
+      setTabs((current) => current.map((t) => (t.id === tab.id ? { ...t, retryAt: Date.now() + delay } : t)))
+      retryTimers.current.set(
+        tab.id,
+        setTimeout(() => {
+          retryTimers.current.delete(tab.id)
+          const latest = tabsRef.current.find((t) => t.id === tab.id)
+          if (latest && latest.phase !== 'connected') void reconnectRef.current(latest)
+        }, delay)
+      )
+    }
+    for (const [id, timer] of retryTimers.current) {
+      if (!tabs.some((t) => t.id === id)) {
+        clearTimeout(timer)
+        retryTimers.current.delete(id)
+      }
+    }
+  }, [tabs])
+
+  // ---- Restore last session tabs (only connection ids + modes are stored) ----
+  const [restoreEnabled, setRestoreEnabled] = useState(() => localStorage.getItem(RESTORE_ENABLED_KEY) !== '0')
+  const restored = useRef(false)
+  useEffect(() => {
+    if (restored.current || loading || connections.length === 0) return
+    restored.current = true
+    if (!restoreEnabled) return
+    const saved = parseRestoreState(localStorage.getItem(RESTORE_KEY), new Set(connections.map((c) => c.id)))
+    void (async () => {
+      for (const item of saved) {
+        const connection = connections.find((c) => c.id === item.connectionId)
+        if (!connection) continue
+        await openSession(connection, true)
+        if (item.mode === 'files') {
+          const tab = tabsRef.current.find((t) => t.connectionId === connection.id)
+          if (tab) setMode(tab.id, 'files')
+        }
+      }
+    })()
+  }, [loading, connections, restoreEnabled, openSession, setMode])
+  useEffect(() => {
+    if (!restored.current) return
+    if (restoreEnabled) localStorage.setItem(RESTORE_KEY, serializeRestoreState(tabs))
+    else localStorage.removeItem(RESTORE_KEY)
+  }, [tabs, restoreEnabled])
+  const toggleRestore = (): void => {
+    setRestoreEnabled((on) => {
+      localStorage.setItem(RESTORE_ENABLED_KEY, on ? '0' : '1')
+      notify(on ? 'Tabs will not be restored on launch.' : 'Open tabs will be restored on launch.')
+      return !on
+    })
+  }
+
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? null
   const activeConnection = connections.find((connection) => connection.id === activeTab?.connectionId)
   const phases: Record<string, SessionPhase | undefined> = {}
@@ -571,6 +645,9 @@ export default function App() {
             {activeTab?.phase === 'connecting' && (
               <div className="connecting-banner">Connecting to {activeConnection ? `${activeConnection.username}@${activeConnection.host}` : activeTab.title}…</div>
             )}
+            {activeTab?.phase === 'error' && activeTab.retryAt && (activeTab.code === 'network' || activeTab.code === 'timeout') && (
+              <div className="connecting-banner">Connection lost. Reconnecting automatically with backoff…</div>
+            )}
             {activeTab && (activeTab.phase === 'error' || activeTab.phase === 'disconnected') && (
               <ProblemSheet
                 key={`${activeTab.id}:${activeTab.phase}:${activeTab.code ?? ''}:${activeTab.message ?? ''}`}
@@ -673,6 +750,7 @@ export default function App() {
                   ]
                 : []),
               ...tabs.filter((t) => t.id !== activeTab?.id).map((t) => ({ id: `tab-${t.id}`, label: `Go to tab: ${t.title}`, run: () => setActiveTabId(t.id) })),
+              { id: 'toggle-restore', label: restoreEnabled ? 'Turn off restoring tabs on launch' : 'Turn on restoring tabs on launch', run: toggleRestore },
               { id: 'new-conn', label: 'New connection…', run: () => { setFormError(null); setForm({}) } }
             ]}
           />
