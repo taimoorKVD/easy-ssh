@@ -18,6 +18,7 @@ const RESTORE_ENABLED_KEY = 'easy-ssh.restoreEnabled'
 const loadFileManager = () => import('./components/FileManager').then((m) => ({ default: m.FileManager }))
 const FileManager = lazy(loadFileManager)
 const CommandPalette = lazy(() => import('./components/CommandPalette'))
+const ForwardsPanel = lazy(() => import('./components/ForwardsPanel'))
 // Warm the File Manager chunk once the app is idle so the first switch is instant.
 setTimeout(() => void loadFileManager(), 1500)
 
@@ -70,6 +71,8 @@ function problemTitle(tab: Tab): string {
 export default function App() {
   const [meta, setMeta] = useState<AppMeta | null>(null)
   const [connections, setConnections] = useState<ConnectionPublic[]>([])
+  const connectionsRef = useRef(connections)
+  connectionsRef.current = connections
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [tabs, setTabs] = useState<Tab[]>([])
@@ -241,6 +244,13 @@ export default function App() {
   useEffect(() => {
     const offStatus = window.easySsh.onSshStatus((status) => {
       if (ignored.current.has(status.sessionId)) return
+      if (status.phase === 'connected') {
+        const tab = tabsRef.current.find((t) => t.sessionId === status.sessionId)
+        const conn = tab && connectionsRef.current.find((c) => c.id === tab.connectionId)
+        for (const rule of conn?.forwards ?? []) {
+          if (rule.autoStart) void window.easySsh.startForward(status.sessionId, rule.id).catch((err) => notify(`Tunnel ${rule.bindPort}: ${errorMessage(err)}`))
+        }
+      }
       setTabs((current) => {
         let found = false
         const next = current.map((tab) => {
@@ -470,6 +480,7 @@ export default function App() {
     else localStorage.removeItem(RESTORE_KEY)
   }, [tabs, restoreEnabled])
   const [themeOpen, setThemeOpen] = useState(false)
+  const [forwardsOpen, setForwardsOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('easy-ssh.sidebarCollapsed') === '1')
   const toggleSidebar = useCallback((): void => {
     setSidebarCollapsed((v) => {
@@ -647,6 +658,9 @@ export default function App() {
                 {activeConnection && <span>{`${activeConnection.username}@${activeConnection.host}`}</span>}
               </div>
               <div className="split-tools">
+                <button type="button" title="Port forwarding" aria-label="Port forwarding" className={activeConnection?.forwards.length ? 'has' : ''} onClick={() => setForwardsOpen(true)}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 8h13l-3-3M20 16H7l3 3" /></svg>
+                </button>
                 <button type="button" title="Split right" aria-label="Split right" onClick={() => void splitTab(activeTab.id, 'row')}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3.5" y="4.5" width="17" height="15" rx="2" /><path d="M12 4.5v15" /></svg>
                 </button>
@@ -859,6 +873,7 @@ export default function App() {
               ...tabs.filter((t) => t.id !== activeTab?.id).map((t) => ({ id: `tab-${t.id}`, label: `Go to tab: ${t.title}`, run: () => setActiveTabId(t.id) })),
               ...(activeTab
                 ? [
+                    { id: 'forwards', label: 'Port forwarding…', run: () => setForwardsOpen(true) },
                     { id: 'split-right', label: 'Split terminal right', run: () => void splitTab(activeTab.id, 'row') },
                     { id: 'split-down', label: 'Split terminal down', run: () => void splitTab(activeTab.id, 'column') },
                     ...((activeTab.panes?.length ?? 0) > 0
@@ -872,6 +887,17 @@ export default function App() {
               { id: 'toggle-restore', label: restoreEnabled ? 'Turn off restoring tabs on launch' : 'Turn on restoring tabs on launch', run: toggleRestore },
               { id: 'new-conn', label: 'New connection…', run: () => { setFormError(null); setForm({}) } }
             ]}
+          />
+        </Suspense>
+      )}
+      {forwardsOpen && activeTab && activeConnection && (
+        <Suspense fallback={null}>
+          <ForwardsPanel
+            connection={activeConnection}
+            sessionId={activeTab.sessionId}
+            connected={activeTab.phase === 'connected'}
+            onSaved={(saved) => setConnections((cur) => cur.map((c) => (c.id === saved.id ? saved : c)))}
+            onClose={() => setForwardsOpen(false)}
           />
         </Suspense>
       )}

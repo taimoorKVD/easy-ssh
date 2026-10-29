@@ -198,7 +198,7 @@ if (gotLock) {
     }
 
     const sftp = new SftpManager(sessions, (progress) => send('sftp:progress', progress))
-    registerIpc(() => mainWindow, store, sessions, sftp)
+    registerIpc(() => mainWindow, store, sessions, sftp, send)
     installMenu()
     mainWindow = createWindow()
     app.on('before-quit', () => sessions.disconnectAll())

@@ -1,3 +1,4 @@
+import type { ForwardRule } from './forwards'
 export type AuthType = 'password' | 'privateKey'
 
 export interface ConnectionInput {
@@ -15,6 +16,7 @@ export interface ConnectionInput {
   defaultDirectory?: string
   startupCommands?: string | string[]
   group?: string
+  forwards?: unknown
 }
 
 export interface ConnectionPublic {
@@ -30,6 +32,7 @@ export interface ConnectionPublic {
   defaultDirectory: string
   startupCommands: string[]
   group: string
+  forwards: ForwardRule[]
   createdAt: string
   updatedAt: string
 }

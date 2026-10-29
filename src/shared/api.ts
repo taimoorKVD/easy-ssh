@@ -1,3 +1,4 @@
+import type { ForwardRule } from './forwards'
 import type { Snippet, SnippetInput } from './snippets'
 import type {
   AppMeta,
@@ -11,7 +12,18 @@ import type {
 } from './types'
 import type { RemoteEntry, TransferProgress } from './remote-fs'
 
+export interface ForwardStateEvent {
+  sessionId: string
+  ruleId: string
+  active: boolean
+}
+
 export interface EasySshApi {
+  setForwards(connectionId: string, rules: ForwardRule[]): Promise<ConnectionPublic>
+  listForwards(sessionId: string): Promise<string[]>
+  startForward(sessionId: string, ruleId: string): Promise<void>
+  stopForward(sessionId: string, ruleId: string): Promise<void>
+  onForwardState(callback: (state: ForwardStateEvent) => void): () => void
   listSnippets(): Promise<Snippet[]>
   saveSnippet(input: SnippetInput): Promise<Snippet>
   deleteSnippet(id: string): Promise<void>

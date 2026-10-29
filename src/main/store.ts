@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { app, safeStorage } from 'electron'
 import { splitStartupCommands } from '../shared/shell'
+import { validateForwards, type ForwardRule } from '../shared/forwards'
 import type { AuthType, ConnectionInput, ConnectionPublic, ExportBundle } from '../shared/types'
 
 const SECRET_NOTE =
@@ -19,6 +20,7 @@ interface StoredConnection {
   defaultDirectory: string
   startupCommands: string[]
   group: string
+  forwards?: ForwardRule[]
   createdAt: string
   updatedAt: string
 }
@@ -186,6 +188,7 @@ export class Store {
         defaultDirectory: normalized.defaultDirectory,
         startupCommands: normalized.startupCommands,
         group: normalized.group,
+        forwards: input.forwards === undefined ? existing?.forwards ?? [] : validateForwards(input.forwards),
         createdAt: existing?.createdAt ?? now,
         updatedAt: now
       }
@@ -221,6 +224,17 @@ export class Store {
       }
       this.secrets.items[id] = next
       this.flushSecrets()
+    })
+  }
+
+  async setForwards(id: string, raw: unknown): Promise<ConnectionPublic> {
+    return this.enqueue(async () => {
+      const existing = this.connections.find((connection) => connection.id === id)
+      if (!existing) throw new Error('That connection no longer exists.')
+      existing.forwards = validateForwards(raw)
+      existing.updatedAt = new Date().toISOString()
+      this.flushConnections()
+      return this.toPublic(existing)
     })
   }
 
@@ -307,6 +321,7 @@ export class Store {
     const item = this.secrets.items[connection.id]
     return {
       ...connection,
+      forwards: connection.forwards ?? [],
       hasPassword: Boolean(item?.password),
       hasPassphrase: Boolean(item?.passphrase)
     }

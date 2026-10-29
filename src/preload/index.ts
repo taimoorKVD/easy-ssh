@@ -5,6 +5,15 @@ import type { SnippetInput } from '../shared/snippets'
 import type { ConnectionInput, HostKeyPrompt, SessionStatus } from '../shared/types'
 
 const api = {
+  setForwards: (id: string, rules: unknown) => ipcRenderer.invoke('connections:setForwards', id, rules),
+  listForwards: (s: string) => ipcRenderer.invoke('fwd:list', s),
+  startForward: (s: string, r: string) => ipcRenderer.invoke('fwd:start', s, r),
+  stopForward: (s: string, r: string) => ipcRenderer.invoke('fwd:stop', s, r),
+  onForwardState: (callback) => {
+    const listener = (_event: IpcRendererEvent, state: { sessionId: string; ruleId: string; active: boolean }) => callback(state)
+    ipcRenderer.on('fwd:state', listener)
+    return () => ipcRenderer.removeListener('fwd:state', listener)
+  },
   getMeta: () => ipcRenderer.invoke('app:meta'),
   serverStats: (sessionId: string) => ipcRenderer.invoke('ssh:stats', sessionId),
   listSnippets: () => ipcRenderer.invoke('snippets:list'),

@@ -74,7 +74,8 @@ class SshSession {
 
   constructor(
     readonly sessionId: string,
-    private readonly record: {
+    readonly record: {
+      id: string
       host: string
       port: number
       username: string
@@ -304,6 +305,10 @@ export class SessionManager {
     this.sessions.set(sessionId, session)
     session.start()
     return sessionId
+  }
+
+  connectionOf(sessionId: string): string | null {
+    return this.sessions.get(sessionId)?.record.id ?? null
   }
 
   client(sessionId: string): Client | null {

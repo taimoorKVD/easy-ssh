@@ -12,6 +12,7 @@ import { SnippetStore } from './snippets'
 import { validateSnippet } from '../shared/snippets'
 import { ID_RE, isExecutableName, isSafeExternalUrl } from './security'
 import { STATS_COMMAND } from '../shared/stats'
+import { ForwardManager } from './forward-manager'
 import type { IpcMainEvent, IpcMainInvokeEvent } from 'electron'
 
 /** Only our own bundled page may call privileged IPC. */
@@ -68,9 +69,25 @@ export function registerIpc(
   getWindow: () => BrowserWindow | null,
   store: Store,
   sessions: SessionManager,
-  sftp: SftpManager
+  sftp: SftpManager,
+  send: (channel: string, payload: unknown) => void
 ): void {
   const sid = (value: unknown): string => asId(value, 'session')
+  const forwards = new ForwardManager((state) => send('fwd:state', state))
+  handle('connections:setForwards', (_e, id: unknown, rules: unknown) => store.setForwards(asId(id), rules))
+  handle('fwd:list', (_e, s: unknown) => forwards.list(sid(s)))
+  handle('fwd:start', async (_e, s: unknown, ruleId: unknown) => {
+    const sessionId = sid(s)
+    const rid = asId(ruleId, 'rule')
+    const connectionId = sessions.connectionOf(sessionId)
+    const client = sessions.client(sessionId)
+    if (!connectionId || !client) throw new Error('Connect first, then start the forward.')
+    // The rule comes from the saved host, never from the renderer.
+    const rule = store.get(connectionId)?.forwards?.find((item) => item.id === rid)
+    if (!rule) throw new Error('That forwarding rule no longer exists.')
+    await forwards.start(sessionId, client, rule)
+  })
+  handle('fwd:stop', (_e, s: unknown, ruleId: unknown) => forwards.stop(sid(s), asId(ruleId, 'rule')))
   const snippets = new SnippetStore()
   handle('snippets:list', () => snippets.list())
   handle('snippets:save', (_e, input: unknown) => snippets.save(validateSnippet(input)))
@@ -255,6 +272,7 @@ export function registerIpc(
 
   handle('ssh:disconnect', (_event, sessionId: unknown) => {
     sftp.release(asId(sessionId, 'session'))
+    forwards.stopSession(asId(sessionId, 'session'))
     sessions.disconnect(asId(sessionId, 'session'))
   })
 
