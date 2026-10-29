@@ -17,6 +17,7 @@ import { authorizedKeysCommand } from '../shared/keys'
 import { parseSshConfig } from '../shared/ssh-config'
 import { buildSearchCommand, parseSearchOutput, validateSearch } from '../shared/remote-search'
 import { spawn } from 'node:child_process'
+import { checkBackupPassword, decryptBackup, encryptBackup } from './backup-crypto'
 import { readdir, stat } from 'node:fs/promises'
 import type { Client } from 'ssh2'
 import type { IpcMainEvent, IpcMainInvokeEvent } from 'electron'
@@ -352,6 +353,68 @@ export function registerIpc(
     }
     const outcome = await store.importBundle(parsed)
     return { canceled: false, ...outcome }
+  })
+
+  // Encrypted backup: hosts + snippets (+ saved keys when asked). Nothing leaves main unencrypted.
+  handle('backup:create', async (_e, password: unknown, includeKeys: unknown) => {
+    const pass = checkBackupPassword(password)
+    const win = getWindow()
+    if (!win) return { canceled: true }
+    const result = await dialog.showSaveDialog(win, {
+      title: 'Save encrypted backup',
+      defaultPath: `easy-ssh-backup-${new Date().toISOString().slice(0, 10)}.essh`,
+      filters: [{ name: 'easy-ssh backup', extensions: ['essh'] }]
+    })
+    if (result.canceled || !result.filePath) return { canceled: true }
+    const payload = {
+      connections: store.exportBundle(),
+      snippets: await snippets.list(),
+      keys: includeKeys === true ? await sessions.keys.exportAll() : []
+    }
+    writeFileSync(result.filePath, await encryptBackup(payload, pass), { encoding: 'utf8', mode: 0o600 })
+    return { canceled: false, path: result.filePath, hosts: payload.connections.connections.length, snippets: payload.snippets.length, keys: payload.keys.length }
+  })
+
+  handle('backup:restore', async (_e, password: unknown) => {
+    if (typeof password !== 'string' || !password || password.length > 1024) throw new Error('Enter the backup password.')
+    const win = getWindow()
+    if (!win) return { canceled: true }
+    const result = await dialog.showOpenDialog(win, {
+      title: 'Restore encrypted backup',
+      filters: [{ name: 'easy-ssh backup', extensions: ['essh'] }],
+      properties: ['openFile']
+    })
+    const file = result.filePaths[0]
+    if (result.canceled || !file) return { canceled: true }
+    if (statSync(file).size > 8 * 1024 * 1024) throw new Error('That backup file is too large.')
+    const data = (await decryptBackup(readFileSync(file, 'utf8'), password)) as Record<string, unknown> | null
+    if (!data || typeof data !== 'object') throw new Error('That backup is empty.')
+    const keyMap = new Map<string, string>()
+    let keys = 0
+    for (const k of Array.isArray(data.keys) ? data.keys.slice(0, 100) : []) {
+      if (!k || typeof k !== 'object' || typeof k.id !== 'string') continue
+      try {
+        keyMap.set(k.id, await sessions.keys.restore(k.name, k.privateKey, k.passphrase))
+        keys += 1
+      } catch {
+        // Skip a key that does not parse.
+      }
+    }
+    const outcome = await store.importMapped(data.connections, keyMap)
+    let snippetCount = 0
+    const existing = await snippets.list()
+    for (const raw of Array.isArray(data.snippets) ? data.snippets.slice(0, 500) : []) {
+      try {
+        const input = validateSnippet({ ...(raw as object), id: undefined })
+        const mapped = input.connectionId ? outcome.idMap.get(input.connectionId) : undefined
+        if (existing.some((s) => s.name === input.name && s.command === input.command)) continue
+        await snippets.save({ ...input, connectionId: mapped ?? null })
+        snippetCount += 1
+      } catch {
+        // Skip invalid snippets.
+      }
+    }
+    return { canceled: false, imported: outcome.imported, skipped: outcome.skipped, snippets: snippetCount, keys }
   })
 
   handle('connections:setMeta', (_e, id: unknown, meta: unknown) => store.setMeta(asId(id), meta))

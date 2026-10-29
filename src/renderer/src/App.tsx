@@ -20,6 +20,7 @@ const FileManager = lazy(loadFileManager)
 const CommandPalette = lazy(() => import('./components/CommandPalette'))
 const ForwardsPanel = lazy(() => import('./components/ForwardsPanel'))
 const KeyManager = lazy(() => import('./components/KeyManager'))
+const BackupDialog = lazy(() => import('./components/BackupDialog'))
 // Warm the File Manager chunk once the app is idle so the first switch is instant.
 setTimeout(() => void loadFileManager(), 1500)
 
@@ -492,6 +493,7 @@ export default function App() {
   const [themeOpen, setThemeOpen] = useState(false)
   const [forwardsOpen, setForwardsOpen] = useState(false)
   const [keysOpen, setKeysOpen] = useState(false)
+  const [backupMode, setBackupMode] = useState<'create' | 'restore' | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('easy-ssh.sidebarCollapsed') === '1')
   const toggleSidebar = useCallback((): void => {
     setSidebarCollapsed((v) => {
@@ -897,6 +899,8 @@ export default function App() {
                   ]
                 : []),
               { id: 'keys', label: 'SSH keys…', run: () => setKeysOpen(true) },
+              { id: 'backup-create', label: 'Create encrypted backup…', run: () => setBackupMode('create') },
+              { id: 'backup-restore', label: 'Restore encrypted backup…', run: () => setBackupMode('restore') },
               { id: 'import-ssh-config', label: 'Import from ~/.ssh/config', run: () => void importConnections(true) },
               { id: 'sidebar', label: sidebarCollapsed ? 'Expand server sidebar' : 'Collapse server sidebar', hint: 'Ctrl+B', run: toggleSidebar },
               { id: 'theme', label: 'Change theme…', hint: 'Appearance', run: () => setThemeOpen(true) },
@@ -905,6 +909,11 @@ export default function App() {
               { id: 'new-conn', label: 'New connection…', run: () => { setFormError(null); setForm({}) } }
             ]}
           />
+        </Suspense>
+      )}
+      {backupMode && (
+        <Suspense fallback={null}>
+          <BackupDialog mode={backupMode} notify={notify} onRestored={() => void refresh()} onClose={() => setBackupMode(null)} />
         </Suspense>
       )}
       {keysOpen && (

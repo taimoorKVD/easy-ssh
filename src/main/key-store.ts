@@ -66,6 +66,27 @@ export class KeyStore {
     })
   }
 
+  /** Full key material for an encrypted backup. Main process only. */
+  async exportAll(): Promise<Array<{ id: string; name: string; privateKey: string; passphrase?: string }>> {
+    return (await this.load()).map((k) => ({ id: k.id, name: k.name, privateKey: k.privateKey, passphrase: k.passphrase }))
+  }
+
+  /** Restore one key from a backup; returns the id of the new or already-present key. */
+  async restore(rawName: unknown, privateKey: unknown, passphrase: unknown): Promise<string> {
+    if (typeof privateKey !== 'string' || privateKey.length > 64 * 1024) throw new Error('Bad key in backup.')
+    const pass = typeof passphrase === 'string' && passphrase.length > 0 ? passphrase.slice(0, 1024) : undefined
+    const parsed = parse(privateKey, pass)
+    if (!parsed.isPrivateKey()) throw new Error('Bad key in backup.')
+    const fingerprint = fingerprintOf(parsed.getPublicSSH())
+    const existing = (await this.load()).find((k) => k.fingerprint === fingerprint)
+    if (existing) return existing.id
+    const name = sanitizeKeyName(rawName || parsed.comment)
+    const publicKey = `${parsed.type} ${parsed.getPublicSSH().toString('base64')} ${name}`
+    if (!isValidPublicKeyLine(publicKey)) throw new Error('Unsupported key type.')
+    const added = await this.add({ name, type: parsed.type.replace(/^ssh-/, ''), publicKey, fingerprint, privateKey, passphrase: pass })
+    return added.id
+  }
+
   async remove(id: string): Promise<void> {
     await this.persist((await this.load()).filter((k) => k.id !== id))
   }

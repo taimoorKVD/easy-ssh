@@ -300,19 +300,32 @@ export class Store {
         group: connection.group || undefined,
         tags: connection.tags?.length ? connection.tags : undefined,
         favorite: connection.favorite || undefined,
-        tmuxSession: connection.tmuxSession || undefined
+        tmuxSession: connection.tmuxSession || undefined,
+        keyId: connection.keyId || undefined,
+        proxyJump: connection.jumpHostId ? this.connections.find((c) => c.id === connection.jumpHostId)?.name : undefined
       }))
     }
   }
 
   async importBundle(raw: unknown): Promise<{ imported: number; skipped: number }> {
+    const { imported, skipped } = await this.importMapped(raw)
+    return { imported, skipped }
+  }
+
+  /** Import that also maps old ids to new ones; keyMap translates saved-key ids from a backup. */
+  async importMapped(
+    raw: unknown,
+    keyMap?: Map<string, string>
+  ): Promise<{ imported: number; skipped: number; idMap: Map<string, string> }> {
+    const idMap = new Map<string, string>()
     return this.enqueue(async () => {
       const entries = parseImportEntries(raw)
       let imported = 0
       let skipped = 0
       const now = new Date().toISOString()
       for (const entry of entries) {
-        const normalized = tryNormalizeImport(entry)
+        const mappedKey = keyMap && isRecord(entry) && typeof entry.keyId === 'string' ? keyMap.get(entry.keyId) : undefined
+        const normalized = tryNormalizeImport(entry, mappedKey)
         if (!normalized) {
           skipped += 1
           continue
@@ -328,8 +341,10 @@ export class Store {
           skipped += 1
           continue
         }
+        const newId = randomUUID()
+        if (isRecord(entry) && typeof entry.id === 'string') idMap.set(entry.id, newId)
         this.connections.push({
-          id: randomUUID(),
+          id: newId,
           ...normalized,
           createdAt: now,
           updatedAt: now
@@ -348,7 +363,7 @@ export class Store {
         linked = true
       }
       if (imported > 0 || linked) this.flushConnections()
-      return { imported, skipped }
+      return { imported, skipped, idMap }
     })
   }
 
@@ -525,7 +540,7 @@ function parseImportEntries(raw: unknown): unknown[] {
   return raw.connections
 }
 
-function tryNormalizeImport(entry: unknown): Omit<StoredConnection, 'id' | 'createdAt' | 'updatedAt'> | null {
+function tryNormalizeImport(entry: unknown, keyId?: string): Omit<StoredConnection, 'id' | 'createdAt' | 'updatedAt'> | null {
   if (!isRecord(entry)) return null
   try {
     const normalized = normalizeInput({
@@ -543,7 +558,7 @@ function tryNormalizeImport(entry: unknown): Omit<StoredConnection, 'id' | 'crea
           : [],
       group: typeof entry.group === 'string' ? entry.group : ''
     })
-    if (normalized.authType === 'privateKey' && !normalized.privateKeyPath) return null
+    if (normalized.authType === 'privateKey' && !normalized.privateKeyPath && !keyId) return null
     return {
       name: normalized.name,
       host: normalized.host,
@@ -556,7 +571,8 @@ function tryNormalizeImport(entry: unknown): Omit<StoredConnection, 'id' | 'crea
       group: normalized.group,
       tags: normalizeTags(entry.tags),
       tmuxSession: normalizeTmux(entry.tmuxSession),
-      favorite: entry.favorite === true
+      favorite: entry.favorite === true,
+      keyId: normalized.authType === 'privateKey' ? keyId : undefined
     }
   } catch {
     return null
