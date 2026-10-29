@@ -78,16 +78,28 @@ jobs:
           npm run typecheck
           npm test
 
-      - name: Set version for this build
-        run: npm version "${{ steps.version.outputs.version }}" --no-git-tag-version --allow-same-version
-
+      # Tag names of deleted immutable releases stay reserved on GitHub, so if a push is
+      # rejected, move on to the next patch number (max 10 tries).
       - name: Create and push tag
+        id: tag
         run: |
           V=${{ steps.version.outputs.version }}
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "v$V" -m "easy-ssh v$V" "$GITHUB_SHA"
-          git push origin "v$V"
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            if ! git rev-parse -q --verify "refs/tags/v$V" >/dev/null \
+               && git tag -a "v$V" -m "easy-ssh v$V" "$GITHUB_SHA" \
+               && git push origin "v$V"; then
+              echo "version=$V" >> "$GITHUB_OUTPUT"; echo "Tagged v$V"; exit 0
+            fi
+            git tag -d "v$V" 2>/dev/null || true
+            echo "v$V is unavailable, trying the next patch"
+            V=$(node -e 'const [x,y,z]=process.argv[1].split(".").map(Number);console.log([x,y,z+1].join("."))' "$V")
+          done
+          echo "::error::Could not create a release tag"; exit 1
+
+      - name: Set version for this build
+        run: npm version "${{ steps.tag.outputs.version }}" --no-git-tag-version --allow-same-version
 
       - name: Build installer
         env:
@@ -102,7 +114,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          V=${{ steps.version.outputs.version }}
+          V=${{ steps.tag.outputs.version }}
           cd release
           cp "easy-ssh-Setup-$V.exe" easy-ssh-Setup.exe
           ls -l "easy-ssh-Setup-$V.exe" "easy-ssh-Setup-$V.exe.blockmap" latest.yml easy-ssh-Setup.exe
@@ -111,10 +123,10 @@ jobs:
           gh release view "v$V" --json url,isDraft,assets --jq '{url, isDraft, assets: [.assets[].name]}'
 
       - name: Clean up tag and release if anything failed
-        if: failure() && steps.version.outputs.version != ''
+        if: failure() && steps.tag.outputs.version != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          V=${{ steps.version.outputs.version }}
+          V=${{ steps.tag.outputs.version }}
           if [ "$(gh release view "v$V" --json isDraft --jq .isDraft 2>/dev/null)" = "true" ]; then gh release delete "v$V" --yes || true; fi
           git push origin ":refs/tags/v$V" 2>/dev/null || true

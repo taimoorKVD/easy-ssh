@@ -21,4 +21,4 @@ Installed apps check GitHub 10 s after start and every 6 hours and offer the upd
 
 Builds are not code-signed, so Windows SmartScreen may warn on first install.
 
-Note: v1.1.0 was published empty by the first CI attempt and, being immutable, cannot be fixed; the first real CI release is v1.1.1.
+Note: the first CI attempts left v1.1.0 published empty and v1.1.1 reserved (immutable releases), so the first full CI release is v1.1.2. If a tag name is reserved, the workflow skips to the next patch automatically.
