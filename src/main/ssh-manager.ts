@@ -7,7 +7,15 @@ import ssh2, { type ClientChannel, type Client as SshClient } from 'ssh2'
 const { Client } = ssh2
 type Client = SshClient
 import { buildStartupScript } from '../shared/shell'
-import type { HostKeyPrompt, SessionErrorCode, SessionStatus } from '../shared/types'
+import {
+  KEYBOARD_AUTH_TIMEOUT_MS,
+  MAX_KEYBOARD_ANSWER,
+  promptFieldsFromServer,
+  resolveKeyboardAuth,
+  type KeyboardPromptField,
+  type KeyboardReply
+} from '../shared/keyboard-auth'
+import type { HostKeyPrompt, KeyboardAuthPrompt, SessionErrorCode, SessionStatus } from '../shared/types'
 import { Store } from './store'
 import { KeyStore } from './key-store'
 
@@ -15,7 +23,17 @@ export interface SessionEvents {
   data(sessionId: string, data: string): void
   status(status: SessionStatus): void
   hostKey(prompt: HostKeyPrompt): void
+  keyboard(prompt: KeyboardAuthPrompt): void
 }
+
+export interface KeyboardRequest {
+  label: string
+  name: string
+  instructions: string
+  prompts: KeyboardPromptField[]
+}
+
+type AskKeyboard = (request: KeyboardRequest) => Promise<KeyboardReply>
 
 interface PendingHostKey {
   host: string
@@ -127,7 +145,9 @@ class SshSession {
     private readonly secret: SecretBundle,
     private readonly events: SessionEvents,
     private readonly onHostKey: HostKeyHandler,
-    private readonly jump: JumpHop | null = null
+    private readonly jump: JumpHop | null,
+    private readonly askKeyboard: AskKeyboard,
+    private readonly onClosed: () => void
   ) {
     this.host = record.host
     this.port = record.port
@@ -155,10 +175,7 @@ class SshSession {
 
     const client = new Client()
     this.client = client
-    client.on('keyboard-interactive', (_name, _instructions, _lang, prompts, finish) => {
-      const answer = this.secret.password ?? ''
-      finish(prompts.map(() => answer))
-    })
+    this.attachKeyboard(client, this.secret.password, `${this.record.username}@${this.record.host}`)
     client.on('banner', (message) => this.emitText(message))
     client.on('greeting', (message) => {
       if (message.trim()) this.emitText(message)
@@ -207,7 +224,7 @@ class SshSession {
     const jumpClient = new Client()
     this.jumpClient = jumpClient
     this.emitText(`\x1b[2mConnecting through jump host ${hop.record.name} (${hop.record.host})…\x1b[0m`)
-    jumpClient.on('keyboard-interactive', (_n, _i, _l, prompts, finish) => finish(prompts.map(() => hop.secret.password ?? '')))
+    this.attachKeyboard(jumpClient, hop.secret.password, `Jump host ${hop.record.name}`)
     jumpClient.on('error', (error) => {
       const classified = classifyError(error)
       this.finish('error', `Jump host ${hop.record.name}: ${classified.message}`, classified.code)
@@ -246,6 +263,55 @@ class SshSession {
       })
     } catch (error) {
       this.fail(error)
+    }
+  }
+
+  /** Saved password fills a single hidden password prompt. Every other prompt goes to the UI. */
+  private attachKeyboard(client: Client, savedPassword: string | undefined, label: string): void {
+    client.on('keyboard-interactive', (name, instructions, _lang, prompts, finish) => {
+      void this.handleKeyboard(
+        String(name ?? ''),
+        String(instructions ?? ''),
+        promptFieldsFromServer(prompts),
+        savedPassword,
+        label,
+        finish
+      )
+    })
+  }
+
+  private async handleKeyboard(
+    name: string,
+    instructions: string,
+    prompts: KeyboardPromptField[],
+    savedPassword: string | undefined,
+    label: string,
+    finish: (responses: string[]) => void
+  ): Promise<void> {
+    if (this.phase === 'closed') return
+    const banner = [name, instructions]
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .join('\n')
+    if (banner) this.emitText(banner.slice(0, 2000))
+    try {
+      const outcome = await resolveKeyboardAuth(name, instructions, prompts, savedPassword, (challenge) =>
+        this.askKeyboard({ ...challenge, label })
+      )
+      if (this.isClosed()) return
+      if (outcome.type === 'cancel') {
+        const message =
+          outcome.reason === 'timeout'
+            ? 'Timed out waiting for the authentication prompt.'
+            : outcome.reason === 'invalid'
+              ? 'The authentication prompt could not be answered.'
+              : 'Authentication was canceled.'
+        this.finish('error', message, outcome.reason === 'timeout' ? 'timeout' : 'auth')
+        return
+      }
+      finish(outcome.answers)
+    } catch (error) {
+      if (!this.isClosed()) this.fail(error)
     }
   }
 
@@ -362,6 +428,7 @@ class SshSession {
     if (this.phase === 'closed') return
     this.phase = 'closed'
     if (this.startupTimer) clearTimeout(this.startupTimer)
+    this.onClosed()
     this.emitStatus(phase, message, code)
     try {
       this.stream?.close()
@@ -385,6 +452,7 @@ export class SessionManager {
   readonly keys = new KeyStore()
   private sessions = new Map<string, SshSession>()
   private pendingHost = new Map<string, PendingHostKey>()
+  private pendingKeyboard = new Map<string, { expected: number; done: (reply: KeyboardReply) => void }>()
 
   constructor(
     private readonly store: Store,
@@ -420,7 +488,9 @@ export class SessionManager {
       secret,
       this.events,
       (key, verify, host, port) => this.handleHostKey(session, key, verify, host, port),
-      jump
+      jump,
+      (request) => this.askKeyboard(sessionId, request),
+      () => this.cancelKeyboard(sessionId)
     )
     this.sessions.set(sessionId, session)
     session.start()
@@ -452,6 +522,36 @@ export class SessionManager {
       this.pendingHost.delete(sessionId)
       pending.verify(false)
     }
+    this.cancelKeyboard(sessionId)
+  }
+
+  /** Answers stay in memory only long enough to finish this authentication round. */
+  respondKeyboard(sessionId: string, answers: string[] | null): void {
+    const pending = this.pendingKeyboard.get(sessionId)
+    if (!pending) return
+    if (answers && (answers.length !== pending.expected || answers.some((answer) => answer.length > MAX_KEYBOARD_ANSWER))) return
+    pending.done(answers)
+  }
+
+  private askKeyboard(sessionId: string, request: KeyboardRequest): Promise<KeyboardReply> {
+    return new Promise((resolve) => {
+      let settled = false
+      const done = (reply: KeyboardReply): void => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        const current = this.pendingKeyboard.get(sessionId)
+        if (current?.done === done) this.pendingKeyboard.delete(sessionId)
+        resolve(reply)
+      }
+      const timer = setTimeout(() => done('timeout'), KEYBOARD_AUTH_TIMEOUT_MS)
+      this.pendingKeyboard.set(sessionId, { expected: request.prompts.length, done })
+      this.events.keyboard({ sessionId, ...request })
+    })
+  }
+
+  private cancelKeyboard(sessionId: string): void {
+    this.pendingKeyboard.get(sessionId)?.done(null)
   }
 
   disconnectAll(): void {

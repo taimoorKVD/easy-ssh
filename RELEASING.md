@@ -17,6 +17,8 @@ The workflow (`.github/workflows/release.yml`, Windows, Node 22) runs `npm ci`, 
 `easy-ssh-Setup.exe`, so `https://github.com/taimoorKVD/easy-ssh/releases/latest/download/easy-ssh-Setup.exe`
 always serves the newest installer. Runs are queued (one at a time). Only the built-in `GITHUB_TOKEN` is used.
 
+Release notes are the matching `CHANGELOG.md` section (`## [X.Y.Z]`). If that section is missing or empty, the workflow uses GitHub's generated notes. Move items out of `[Unreleased]` into that version heading in the release commit when those notes should be the published text.
+
 Installed apps check GitHub 10 s after start and every 6 hours and offer the update.
 
 Builds are not code-signed, so Windows SmartScreen may warn on first install.

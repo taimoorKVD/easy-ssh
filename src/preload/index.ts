@@ -3,7 +3,7 @@ import type { TransferProgress } from '../shared/remote-fs'
 import type { EasySshApi } from '../shared/api'
 import type { SnippetInput } from '../shared/snippets'
 import type { UpdateState } from '../shared/update-state'
-import type { ConnectionInput, HostKeyPrompt, SessionStatus } from '../shared/types'
+import type { ConnectionInput, HostKeyPrompt, KeyboardAuthPrompt, SessionStatus } from '../shared/types'
 
 const api = {
   listKeys: () => ipcRenderer.invoke('keys:list'),
@@ -44,6 +44,7 @@ const api = {
   resize: (sessionId: string, cols: number, rows: number) => ipcRenderer.send('ssh:resize', sessionId, cols, rows),
   respondHostKey: (sessionId: string, accept: boolean, save: boolean) =>
     ipcRenderer.send('ssh:hostkey', sessionId, accept, save),
+  respondKeyboard: (sessionId: string, answers: string[] | null) => ipcRenderer.send('ssh:keyboard', sessionId, answers),
   openSystemTerminal: (connectionId: string) => ipcRenderer.invoke('ssh:systemTerminal', connectionId),
   openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   clipboardRead: () => ipcRenderer.invoke('clipboard:read'),
@@ -65,6 +66,11 @@ const api = {
     const listener = (_event: IpcRendererEvent, prompt: HostKeyPrompt) => callback(prompt)
     ipcRenderer.on('ssh:hostkey', listener)
     return () => ipcRenderer.removeListener('ssh:hostkey', listener)
+  },
+  onKeyboard: (callback) => {
+    const listener = (_event: IpcRendererEvent, prompt: KeyboardAuthPrompt) => callback(prompt)
+    ipcRenderer.on('ssh:keyboard', listener)
+    return () => ipcRenderer.removeListener('ssh:keyboard', listener)
   },
   sftpHome: (s: string) => ipcRenderer.invoke('sftp:home', s),
   sftpList: (s: string, p: string) => ipcRenderer.invoke('sftp:list', s, p),
