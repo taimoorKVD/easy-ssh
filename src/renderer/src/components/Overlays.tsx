@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import type { ConnectionPublic, HostKeyPrompt, SessionErrorCode } from '@shared/types'
+import { KEYBOARD_AUTH_TIMEOUT_MS, MAX_KEYBOARD_ANSWER } from '@shared/keyboard-auth'
+import type { ConnectionPublic, HostKeyPrompt, KeyboardAuthPrompt, SessionErrorCode } from '@shared/types'
 
 export function Toast({ message }: { message: string | null }) {
   if (!message) return null
@@ -110,6 +111,69 @@ export function HostKeyDialog({
           </button>
         </footer>
       </div>
+    </div>
+  )
+}
+
+export function KeyboardAuthDialog({
+  prompt,
+  onCancel,
+  onSubmit
+}: {
+  prompt: KeyboardAuthPrompt
+  onCancel: () => void
+  onSubmit: (answers: string[]) => void
+}) {
+  const [values, setValues] = useState<string[]>(() => prompt.prompts.map(() => ''))
+  const seconds = Math.round(KEYBOARD_AUTH_TIMEOUT_MS / 1000)
+  const heading = prompt.name.trim() || 'Authentication required'
+
+  function submit(event: FormEvent): void {
+    event.preventDefault()
+    onSubmit(values)
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <form className="modal modal-compact" role="dialog" aria-modal="true" aria-labelledby="kbd-title" onSubmit={submit}>
+        <header className="modal-head">
+          <div>
+            <h2 id="kbd-title">{heading}</h2>
+            <p>{prompt.label}</p>
+          </div>
+        </header>
+        {prompt.instructions.trim() && <p className="dialog-body">{prompt.instructions}</p>}
+        <div className="form-grid">
+          {prompt.prompts.map((field, index) => (
+            <label className="field span-2" key={`${index}:${field.prompt}`}>
+              <span>{field.prompt.trim() || 'Response'}</span>
+              <input
+                type={field.echo ? 'text' : 'password'}
+                value={values[index] ?? ''}
+                autoFocus={index === 0}
+                autoComplete="off"
+                spellCheck={false}
+                maxLength={MAX_KEYBOARD_ANSWER}
+                aria-label={field.prompt.trim() || 'Response'}
+                onChange={(event) => {
+                  const next = values.slice()
+                  next[index] = event.target.value
+                  setValues(next)
+                }}
+              />
+            </label>
+          ))}
+        </div>
+        <p className="dialog-body">Used once for this sign-in and not saved. Closes after {seconds} seconds.</p>
+        <footer className="modal-actions">
+          <button type="button" className="btn btn-ghost" onClick={onCancel}>
+            Cancel
+          </button>
+          <button type="submit" className="btn btn-primary">
+            Continue
+          </button>
+        </footer>
+      </form>
     </div>
   )
 }

@@ -1,0 +1,72 @@
+name: Bug report
+description: Something in easy-ssh did not work
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting this. Please fill in what you can.
+  - type: input
+    id: version
+    attributes:
+      label: easy-ssh version
+      description: Help menu, or the installer name (for example 1.1.3).
+      placeholder: "1.1.3"
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      description: For example, Windows 11 24H2. Include the build if you have it.
+      placeholder: "Windows 11 24H2"
+    validations:
+      required: true
+  - type: dropdown
+    id: auth
+    attributes:
+      label: Auth method
+      description: How this connection signs in.
+      options:
+        - Password
+        - Private key
+        - Keyboard-interactive / MFA
+        - Jump host
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What you clicked, and which server behavior you expected to hit.
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Paste the relevant message from the session or the developer tools console.
+
+        Do not paste secrets. Remove passwords, key passphrases, private keys, and one-time codes before submitting. A prompt that still contains a secret will be treated as public.
+      placeholder: Error text, with secrets removed
+    validations:
+      required: false

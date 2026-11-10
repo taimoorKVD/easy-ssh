@@ -64,7 +64,7 @@ Also included:
 
 **The basics:**
 - Save, edit, delete and search connections. Each one can have an optional group, a default remote directory and startup commands (one per line).
-- Authenticate with a password or a private key file with an optional passphrase.
+- Authenticate with a password or a private key file with an optional passphrase. A saved password fills a single hidden keyboard-interactive password prompt. A verification code or other extra prompt is asked in a dialog and is not saved.
 - Embedded terminal tabs (xterm.js over [ssh2](https://github.com/mscdex/ssh2)). You can keep several tabs open, including more than one session on the same server.
 - Wrong passwords and dropped connections stay in the tab with a reconnect option. You can replace a rejected password without editing the whole connection.
 - **Open in system terminal** launches the OS terminal with `ssh`. The saved password is not injected.

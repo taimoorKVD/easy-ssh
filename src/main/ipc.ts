@@ -2,6 +2,7 @@ import { app, clipboard, dialog, ipcMain, shell, type BrowserWindow } from 'elec
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { homedir, userInfo } from 'node:os'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
+import { MAX_KEYBOARD_ANSWER, MAX_KEYBOARD_PROMPTS } from '../shared/keyboard-auth'
 import type { ConnectionInput } from '../shared/types'
 import { openSystemTerminal } from './system-terminal'
 import { SessionManager } from './ssh-manager'
@@ -509,6 +510,22 @@ export function registerIpc(
   on('ssh:hostkey', (_event, sessionId: unknown, accept: unknown, save: unknown) => {
     if (typeof sessionId !== 'string' || !ID_RE.test(sessionId) || typeof accept !== 'boolean' || typeof save !== 'boolean') return
     sessions.respondHostKey(sessionId, accept, save)
+  })
+
+  // One-time replies for keyboard-interactive. They are not written to the connection secret.
+  on('ssh:keyboard', (_event, sessionId: unknown, answers: unknown) => {
+    if (typeof sessionId !== 'string' || !ID_RE.test(sessionId)) return
+    if (answers === null) {
+      sessions.respondKeyboard(sessionId, null)
+      return
+    }
+    if (!Array.isArray(answers) || answers.length > MAX_KEYBOARD_PROMPTS) return
+    const clean: string[] = []
+    for (const item of answers) {
+      if (typeof item !== 'string' || item.length > MAX_KEYBOARD_ANSWER) return
+      clean.push(item)
+    }
+    sessions.respondKeyboard(sessionId, clean)
   })
 
   handle('ssh:systemTerminal', (_event, connectionId: unknown) => {

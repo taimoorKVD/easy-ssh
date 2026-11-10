@@ -7,6 +7,7 @@ import type {
   ConnectionPublic,
   ExportResult,
   HostKeyPrompt,
+  KeyboardAuthPrompt,
   ImportResult,
   SessionStatus,
   TerminalLaunchResult
@@ -67,6 +68,8 @@ export interface EasySshApi {
   write(sessionId: string, data: string): void
   resize(sessionId: string, cols: number, rows: number): void
   respondHostKey(sessionId: string, accept: boolean, save: boolean): void
+  /** `null` cancels the connection. Answers are not saved. */
+  respondKeyboard(sessionId: string, answers: string[] | null): void
   openSystemTerminal(connectionId: string): Promise<TerminalLaunchResult>
   openExternal(url: string): Promise<void>
   clipboardRead(): Promise<string>
@@ -77,6 +80,7 @@ export interface EasySshApi {
   onSshData(callback: (payload: { sessionId: string; data: string }) => void): () => void
   onSshStatus(callback: (status: SessionStatus) => void): () => void
   onHostKey(callback: (prompt: HostKeyPrompt) => void): () => void
+  onKeyboard(callback: (prompt: KeyboardAuthPrompt) => void): () => void
   sftpHome(sessionId: string): Promise<string>
   sftpList(sessionId: string, path: string): Promise<{ path: string; entries: RemoteEntry[] }>
   sftpMkdir(sessionId: string, path: string): Promise<void>

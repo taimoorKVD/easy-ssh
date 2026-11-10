@@ -198,6 +198,13 @@ if (gotLock) {
       },
       hostKey: (prompt) => {
         send('ssh:hostkey', prompt)
+      },
+      keyboard: (prompt) => {
+        if (process.env.EASY_SSH_SMOKE === '1') {
+          sessions.respondKeyboard(prompt.sessionId, null)
+          return
+        }
+        send('ssh:keyboard', prompt)
       }
     })
 

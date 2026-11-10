@@ -1,8 +1,8 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
-import type { AppMeta, ConnectionInput, ConnectionPublic, HostKeyPrompt, SessionErrorCode, SessionPhase, SessionStatus } from '@shared/types'
+import type { AppMeta, ConnectionInput, ConnectionPublic, HostKeyPrompt, KeyboardAuthPrompt, SessionErrorCode, SessionPhase, SessionStatus } from '@shared/types'
 import { ConnectionForm } from './components/ConnectionForm'
 import { IconClose, LogoMark } from './components/Icons'
-import { ConfirmDialog, HostKeyDialog, ProblemSheet, Toast } from './components/Overlays'
+import { ConfirmDialog, HostKeyDialog, KeyboardAuthDialog, ProblemSheet, Toast } from './components/Overlays'
 import { Sidebar } from './components/Sidebar'
 import { TerminalView } from './components/TerminalView'
 import { shSingleQuote } from '@shared/shell'
@@ -87,6 +87,7 @@ export default function App() {
   const [deleteTarget, setDeleteTarget] = useState<ConnectionPublic | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [hostKey, setHostKey] = useState<HostKeyPrompt | null>(null)
+  const [keyboardQueue, setKeyboardQueue] = useState<KeyboardAuthPrompt[]>([])
   const [toast, setToast] = useState<string | null>(null)
   const [paletteOpen, setPaletteOpen] = useState(false)
 
@@ -97,11 +98,13 @@ export default function App() {
   const tabsRef = useRef(tabs)
   const activeRef = useRef(activeTabId)
   const hostKeyRef = useRef(hostKey)
+  const keyboardRef = useRef(keyboardQueue)
   const formRef = useRef(form)
   const deleteRef = useRef(deleteTarget)
   tabsRef.current = tabs
   activeRef.current = activeTabId
   hostKeyRef.current = hostKey
+  keyboardRef.current = keyboardQueue
   formRef.current = form
   deleteRef.current = deleteTarget
 
@@ -232,6 +235,10 @@ export default function App() {
       window.easySsh.respondHostKey(tab.sessionId, false, false)
       setHostKey(null)
     }
+    const closing = new Set([tab.sessionId, ...(tab.panes ?? [])])
+    if (keyboardRef.current.some((item) => closing.has(item.sessionId))) {
+      setKeyboardQueue((queue) => queue.filter((item) => !closing.has(item.sessionId)))
+    }
     void window.easySsh.disconnect(tab.sessionId)
     for (const pane of tab.panes ?? []) {
       ignored.current.add(pane)
@@ -255,6 +262,9 @@ export default function App() {
           if (rule.autoStart) void window.easySsh.startForward(status.sessionId, rule.id).catch((err) => notify(`Tunnel ${rule.bindPort}: ${errorMessage(err)}`))
         }
       }
+      if (status.phase === 'error' || status.phase === 'disconnected') {
+        setKeyboardQueue((queue) => queue.filter((item) => item.sessionId !== status.sessionId))
+      }
       setTabs((current) => {
         let found = false
         const next = current.map((tab) => {
@@ -273,6 +283,9 @@ export default function App() {
       else buffers.current.set(sessionId, (buffers.current.get(sessionId) ?? '') + data)
     })
     const offHost = window.easySsh.onHostKey((prompt) => setHostKey(prompt))
+    const offKeyboard = window.easySsh.onKeyboard((prompt) => {
+      setKeyboardQueue((queue) => [...queue.filter((item) => item.sessionId !== prompt.sessionId), prompt])
+    })
     const offMenu = window.easySsh.onMenu((action) => {
       if (action === 'new') {
         setFormError(null)
@@ -285,6 +298,7 @@ export default function App() {
       offStatus()
       offData()
       offHost()
+      offKeyboard()
       offMenu()
     }
     // Menu handlers are stable enough for the lifetime of the window; they call the latest refresh via closure on first mount.
@@ -304,6 +318,16 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
+      if (keyboardRef.current.length > 0) {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          event.stopPropagation()
+          const pending = keyboardRef.current[0]
+          window.easySsh.respondKeyboard(pending.sessionId, null)
+          setKeyboardQueue((queue) => queue.slice(1))
+        }
+        return
+      }
       const meta = event.metaKey || event.ctrlKey
       const target = event.target instanceof HTMLElement ? event.target : null
       const typing = Boolean(target?.closest('input, textarea, [contenteditable="true"]'))
@@ -875,6 +899,22 @@ export default function App() {
           onTrust={() => {
             window.easySsh.respondHostKey(hostKey.sessionId, true, true)
             setHostKey(null)
+          }}
+        />
+      )}
+      {keyboardQueue[0] && (
+        <KeyboardAuthDialog
+          key={`${keyboardQueue[0].sessionId}:${keyboardQueue[0].prompts.map((item) => item.prompt).join('\n')}`}
+          prompt={keyboardQueue[0]}
+          onCancel={() => {
+            const pending = keyboardQueue[0]
+            window.easySsh.respondKeyboard(pending.sessionId, null)
+            setKeyboardQueue((queue) => queue.slice(1))
+          }}
+          onSubmit={(answers) => {
+            const pending = keyboardQueue[0]
+            window.easySsh.respondKeyboard(pending.sessionId, answers)
+            setKeyboardQueue((queue) => queue.slice(1))
           }}
         />
       )}

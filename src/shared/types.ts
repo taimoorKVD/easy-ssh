@@ -1,4 +1,7 @@
 import type { ForwardRule } from './forwards'
+import type { KeyboardPromptField } from './keyboard-auth'
+
+export type { KeyboardPromptField }
 export type AuthType = 'password' | 'privateKey'
 
 export interface ConnectionInput {
@@ -83,6 +86,16 @@ export interface HostKeyPrompt {
   fingerprint: string
   changed: boolean
   previousFingerprint?: string
+}
+
+/** A keyboard-interactive challenge the user has to answer. Replies are not stored. */
+export interface KeyboardAuthPrompt {
+  sessionId: string
+  /** Which hop is asking, for example `user@host` or a jump host name. */
+  label: string
+  name: string
+  instructions: string
+  prompts: KeyboardPromptField[]
 }
 
 export interface AppMeta {

@@ -116,10 +116,18 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           V=${{ steps.tag.outputs.version }}
+          NOTE_ARGS=(--generate-notes)
+          NOTES_FILE="${RUNNER_TEMP}/easy-ssh-notes.md"
+          if node --experimental-strip-types scripts/changelog-notes.ts "$V" > "$NOTES_FILE" && [ -s "$NOTES_FILE" ]; then
+            NOTE_ARGS=(--notes-file "$NOTES_FILE")
+            echo "Release notes taken from CHANGELOG.md for $V"
+          else
+            echo "No CHANGELOG section for $V; using generated notes"
+          fi
           cd release
           cp "easy-ssh-Setup-$V.exe" easy-ssh-Setup.exe
           ls -l "easy-ssh-Setup-$V.exe" "easy-ssh-Setup-$V.exe.blockmap" latest.yml easy-ssh-Setup.exe
-          gh release create "v$V" --verify-tag --latest --title "easy-ssh $V" --generate-notes \
+          gh release create "v$V" --verify-tag --latest --title "easy-ssh $V" "${NOTE_ARGS[@]}" \
             "easy-ssh-Setup-$V.exe" "easy-ssh-Setup-$V.exe.blockmap" latest.yml easy-ssh-Setup.exe
           gh release view "v$V" --json url,isDraft,assets --jq '{url, isDraft, assets: [.assets[].name]}'
 
