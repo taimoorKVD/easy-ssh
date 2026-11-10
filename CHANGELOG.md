@@ -1,10 +1,12 @@
 # Changelog
 
-Notable changes to easy-ssh, matched to the git tags. `package.json` in the repository stays at the baseline version; the release workflow stamps the version only onto the build.
+Notable changes to easy-ssh, matched to the git tags. `package.json` is the baseline; the release workflow will not publish a version older than that.
 
 GitHub release notes are the section for that version. A missing section falls back to generated notes. `[Unreleased]` is not published on its own.
 
 ## [Unreleased]
+
+## [1.2.0] - 2026-11-11
 
 ### Fixed
 
@@ -17,7 +19,7 @@ GitHub release notes are the section for that version. A missing section falls b
 
 ### Changed
 
-- README badge links were corrected, and the demo preview is an animated GIF that links to the full video. Those documentation commits are on `main` and are not in a tagged release yet.
+- README badge links were corrected, and the demo preview is an animated GIF that links to the full video.
 
 ## [1.1.3] - 2026-10-29
 
