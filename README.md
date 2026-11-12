@@ -31,7 +31,7 @@ A desktop SSH client for the connections you open all the time. Save the host, p
 
 Windows is the primary target. The same app runs on macOS and Linux, and installers for those platforms are coming soon.
 
-> 🌐 Landing page source: **[taimoorKVD/easy-ssh-website](https://github.com/taimoorKVD/easy-ssh-website)**
+> 🌐 Website: **[easyssh.thebetawebsite.com](https://easyssh.thebetawebsite.com/)** · source: **[taimoorKVD/easy-ssh-website](https://github.com/taimoorKVD/easy-ssh-website)**
 
 ## ✨ Features
 
@@ -165,6 +165,7 @@ Each release ships `easy-ssh-Setup-X.Y.Z.exe`, its `.blockmap`, `latest.yml` and
 
 ## 🔗 Links
 
+- **Website:** [easyssh.thebetawebsite.com](https://easyssh.thebetawebsite.com/)
 - **Website source:** [taimoorKVD/easy-ssh-website](https://github.com/taimoorKVD/easy-ssh-website)
 - **Downloads:** [Releases](https://github.com/taimoorKVD/easy-ssh/releases)
 - **Bugs & ideas:** [Issues](https://github.com/taimoorKVD/easy-ssh/issues)
