@@ -86,7 +86,7 @@ export function FileManager({ sessionId, connectionId, active, connected, notify
   const [editingPath, setEditingPath] = useState<string | null>(null)
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
-  const [showHidden, setShowHidden] = useState(false)
+  const [showHidden, setShowHidden] = useState(true)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [anchor, setAnchor] = useState<string | null>(null)
   const [renaming, setRenaming] = useState<{ path: string; value: string } | null>(null)
