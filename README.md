@@ -172,4 +172,4 @@ Each release ships `easy-ssh-Setup-X.Y.Z.exe`, its `.blockmap`, `latest.yml` and
 
 ## 📄 License and trademark
 
-[MIT](LICENSE) © 2026 easy-ssh. Built by **Taimoor Hussain** ([@taimoorKVD](https://github.com/taimoorKVD)). If easy-ssh saves you time, a ⭐ is appreciated. The EasySSH name and logo are trademarks and are not granted by the MIT license.
+[MIT](LICENSE) © 2026 Kingdom Vision. Built by **Taimoor Hussain** ([@taimoorKVD](https://github.com/taimoorKVD)). If easy-ssh saves you time, a ⭐ is appreciated. The EasySSH name and logo are trademarks and are not granted by the MIT license.
