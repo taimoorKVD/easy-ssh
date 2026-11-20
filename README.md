@@ -170,6 +170,6 @@ Each release ships `easy-ssh-Setup-X.Y.Z.exe`, its `.blockmap`, `latest.yml` and
 - **Downloads:** [Releases](https://github.com/taimoorKVD/easy-ssh/releases)
 - **Bugs & ideas:** [Issues](https://github.com/taimoorKVD/easy-ssh/issues)
 
-## 📄 License
+## 📄 License and trademark
 
-[MIT](LICENSE) © 2026 easy-ssh. Built by **Taimoor Hussain** ([@taimoorKVD](https://github.com/taimoorKVD)). If easy-ssh saves you time, a ⭐ is appreciated.
+[MIT](LICENSE) © 2026 easy-ssh. Built by **Taimoor Hussain** ([@taimoorKVD](https://github.com/taimoorKVD)). If easy-ssh saves you time, a ⭐ is appreciated. The EasySSH name and logo are trademarks and are not granted by the MIT license.
